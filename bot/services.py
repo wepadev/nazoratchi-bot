@@ -76,11 +76,13 @@ def announce_text(test: Test, group: Group, cfg: Config, now: datetime) -> str:
     return (
         f"📝 <b>Yangi test: {escape(test.title)}</b>\n\n"
         f"Guruh: {escape(group.name)}\n"
+        f"Test kodi: <b>{test.id}</b>\n"
         f"Savollar: {test.n} ta (A/B/C/D)\n"
         f"Muddat: <b>{fmt(test.deadline_at)}</b> gacha ({fmt_left(test.deadline_at - now)} qoldi)\n\n"
         f"Har bir to'g'ri javob: +{cfg.coins_per_correct} {COIN}\n"
         f"Topshirmaslik: −{cfg.penalty_not_submitted} {COIN}\n\n"
-        "Javoblar <b>faqat bir marta</b> qabul qilinadi. Pastdagi tugmani bosing 👇"
+        f"⚡️ Tez yuborish — botga bitta xabar: <code>{test.id}*abcd...</code>\n"
+        "Javoblar <b>faqat bir marta</b> qabul qilinadi."
     )
 
 
@@ -247,6 +249,7 @@ async def send_reminders(bot: Bot, db: Database, cfg: Config, now: datetime) -> 
         icon = "🔥" if final else "⏰"
         text = (f"{icon} <b>Eslatma:</b> «{escape(t.title)}» testini hali topshirmadingiz.\n\n"
                 f"Muddat: <b>{fmt(t.deadline_at)}</b> — {fmt_left(left)} qoldi.\n"
+                f"Tez yuborish: <code>{t.id}*abcd...</code>\n"
                 f"Topshirmaslik: −{cfg.penalty_not_submitted} {COIN}")
         for u in await db.non_submitters(t, only_before_publish=False):
             await safe_send(bot, u.id, text, kb.answer_kb(t.id))

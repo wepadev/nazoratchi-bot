@@ -27,6 +27,13 @@ bot avtomatik tekshiradi, tanga beradi va reyting tuzadi.
    - nazoratchiga hisobot: topshirganlar, o'rtacha natija, eng ko'p xato qilingan savollar,
      topshirmaganlar, **ketma-ket 2 ta testni topshirmaganlar**.
 
+## Tez formatlar (bitta xabar bilan)
+
+- **Ustoz:** `kod*javoblar`, masalan `12*abcdabcd` yoki `12*1a 2b 3c`. Test kodi e'lon xabarida yoziladi.
+  Faqat bitta faol testi bo'lsa, kodsiz `abcdabcd` ham yetadi. Bot javoblarni ko'rsatib, bir marta tasdiqlatadi.
+- **Nazoratchi:** `+Nomi*kalit`, masalan `+3-hafta: Hosila*abcdabcdab`. PDF yoki rasmni shu matnni izoh
+  qilib yuborsa, fayl ham qo'shiladi. Bir nechta guruhi bo'lsa, bot guruhni so'raydi; keyin nashr qilinadi.
+
 ## Tanga va reyting
 
 - Har bir to'g'ri javob: **+1**, topshirmaslik: **−5** (`.env` da o'zgartiriladi).

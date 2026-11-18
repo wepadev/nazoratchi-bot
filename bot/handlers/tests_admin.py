@@ -3,6 +3,7 @@ from datetime import timedelta
 from html import escape
 
 from aiogram import Bot, F, Router
+from aiogram.filters import StateFilter
 from aiogram.exceptions import TelegramBadRequest
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
@@ -12,6 +13,7 @@ from .. import keyboards as kb
 from .. import services
 from .. import texts as T
 from ..answers import AnswerError, parse_answers, preview
+import re
 from ..config import Config
 from ..db import Database, Test, User
 from ..timeutil import fmt, fmt_left, parse_local, utcnow
@@ -23,6 +25,10 @@ router.message.filter(Registered(), IsAdmin())
 router.callback_query.filter(Registered(), IsAdmin())
 
 STATUS = {"draft": "📄 Qoralama", "queued": "⏳ Navbatda", "published": "🟢 Faol", "closed": "✅ Yakunlangan"}
+
+
+class QuickTest(StatesGroup):
+    group = State()
 
 
 class TestForm(StatesGroup):
@@ -67,7 +73,9 @@ async def tests_list_text(db: Database, group_id: int) -> str:
     g = await db.get_group(group_id)
     return (f"📝 <b>{escape(g.name)}</b> — testlar\n\n"
             "🟢 faol · ⏳ navbatda · 📄 qoralama · ✅ yakunlangan\n"
-            "Testlar navbat bilan nashr qilinadi: bir vaqtda bitta faol test.")
+            "Testlar navbat bilan nashr qilinadi: bir vaqtda bitta faol test.\n\n"
+            "⚡️ Tez yaratish — botga bitta xabar: <code>+Nomi*abcdabcd...</code>\n"
+            "(PDF yoki rasmni shu matnni izoh qilib yuborsangiz, fayl ham qo'shiladi)")
 
 
 @router.callback_query(kb.GroupCb.filter(F.action == "tests"))
@@ -365,3 +373,63 @@ async def delete_ok(call: CallbackQuery, callback_data: kb.TestCb, db: Database,
     await call.answer("O'chirildi")
     tests = await db.list_tests(t.group_id)
     await call.message.edit_text(await tests_list_text(db, t.group_id), reply_markup=kb.tests_kb(t.group_id, tests))
+
+
+# ---------- tez yaratish: "+Nomi*kalit" (matn yoki fayl izohi) ----------
+
+QUICK_RE = re.compile(r"^\s*\+\s*(.{2,80}?)\s*\*\s*(.+)$", re.S)
+
+
+async def _quick_create(message: Message, state: FSMContext, db: Database, user: User, is_super: bool,
+                        text: str, file_id: str | None, file_type: str | None) -> None:
+    m = QUICK_RE.match(text)
+    title, raw_key = " ".join(m.group(1).split()), m.group(2)
+    try:
+        key = parse_answers(raw_key, None, allow_blank=False)
+    except AnswerError as e:
+        return await message.answer(f"❌ Kalit: {e}")
+    groups = await db.list_groups(None if is_super else user.id)
+    if not groups:
+        return await message.answer(T.NO_GROUPS_SUPER if is_super else T.NO_GROUPS_ADMIN)
+    if len(groups) == 1:
+        return await _quick_save(message, db, user, groups[0].id, title, key, file_id, file_type)
+    await state.set_state(QuickTest.group)
+    await state.update_data(title=title, key=key, file_id=file_id, file_type=file_type)
+    await message.answer(f"«{escape(title)}» ({len(key)} ta savol) qaysi guruh uchun?",
+                         reply_markup=kb.quick_group_kb(groups))
+
+
+async def _quick_save(message: Message, db: Database, user: User, group_id: int, title: str, key: str,
+                      file_id: str | None, file_type: str | None) -> None:
+    t = await db.create_test(group_id, title, key, file_id, file_type, user.id)
+    g = await db.get_group(group_id)
+    await message.answer(f"✅ Test saqlandi: {escape(g.name)}, {t.n} ta savol. Kalitni tekshiring va nashr qiling 👇")
+    await message.answer((await card_text(db, t))[:4000], reply_markup=kb.test_kb(t))
+
+
+@router.message(StateFilter(None), F.text.regexp(QUICK_RE))
+async def quick_text(message: Message, state: FSMContext, db: Database, user: User, is_super: bool):
+    await _quick_create(message, state, db, user, is_super, message.text, None, None)
+
+
+@router.message(StateFilter(None), F.document, F.caption.regexp(QUICK_RE))
+async def quick_document(message: Message, state: FSMContext, db: Database, user: User, is_super: bool):
+    await _quick_create(message, state, db, user, is_super, message.caption, message.document.file_id, "document")
+
+
+@router.message(StateFilter(None), F.photo, F.caption.regexp(QUICK_RE))
+async def quick_photo(message: Message, state: FSMContext, db: Database, user: User, is_super: bool):
+    await _quick_create(message, state, db, user, is_super, message.caption, message.photo[-1].file_id, "photo")
+
+
+@router.callback_query(QuickTest.group, kb.GroupCb.filter(F.action == "quick"))
+async def quick_pick_group(call: CallbackQuery, callback_data: kb.GroupCb, state: FSMContext, db: Database,
+                           user: User, is_super: bool):
+    if not await access(db, callback_data.group_id, user, is_super):
+        return await deny(call)
+    data = await state.get_data()
+    await state.clear()
+    await call.answer()
+    await call.message.edit_reply_markup(reply_markup=None)
+    await _quick_save(call.message, db, user, callback_data.group_id, data["title"], data["key"],
+                      data.get("file_id"), data.get("file_type"))

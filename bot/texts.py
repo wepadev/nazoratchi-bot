@@ -47,6 +47,7 @@ ASK_ANSWERS = (
     "• ketma-ket: <code>abcdabcd...</code>\n"
     "• yoki raqam bilan: <code>1a 2b 3c ...</code>\n\n"
     "Javob bermagan savolga <code>x</code> yozing (raqamli formatda shunchaki tashlab keting).\n"
+    "Keyingi safar tugmasiz ham bo'ladi: <code>{code}*abcd...</code>\n"
     "Muddat: {deadline} ({left} qoldi)"
 )
 CONFIRM_ANSWERS = ("Javoblaringizni tekshiring:\n{preview}\n"

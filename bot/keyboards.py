@@ -220,6 +220,10 @@ def rating_kb(group_id: int, period: str, admin: bool) -> InlineKeyboardMarkup:
     return _build(items, [3, 1])
 
 
+def quick_group_kb(groups) -> InlineKeyboardMarkup:
+    return _build([(f"📁 {g.name}", GroupCb(action="quick", group_id=g.id)) for g in groups])
+
+
 def pick_group_kb(groups, action: str) -> InlineKeyboardMarkup:
     return _build([(f"📁 {g.name}", MyGroupCb(action=action, group_id=g.id)) for g in groups])
 

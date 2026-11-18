@@ -49,6 +49,19 @@ class FakeSession(BaseSession):
         pass
 
 
+def build_dispatcher(db, cfg):
+    """Har bir test uchun yangi Dispatcher (modul darajasidagi routerlarni qayta ulash)."""
+    dp = Dispatcher(storage=MemoryStorage())
+    mw = ContextMiddleware(db, cfg)
+    dp.message.outer_middleware(mw)
+    dp.callback_query.outer_middleware(mw)
+    routers = [common.router, superadmin.router, groups.router, tests_admin.router, appeals.router, user.router]
+    for r in routers:
+        r._parent_router = None
+    dp.include_routers(*routers)
+    return dp
+
+
 def tg(uid):
     return TgUser(id=uid, is_bot=False, first_name=f"U{uid}")
 
@@ -86,12 +99,7 @@ def test_full_flow():
                      quiet_hours=(0, 0))
         session = FakeSession()
         bot = Bot("123:abc", session=session)
-        dp = Dispatcher(storage=MemoryStorage())
-        mw = ContextMiddleware(db, cfg)
-        dp.message.outer_middleware(mw)
-        dp.callback_query.outer_middleware(mw)
-        dp.include_routers(common.router, superadmin.router, groups.router, tests_admin.router,
-                           appeals.router, user.router)
+        dp = build_dispatcher(db, cfg)
 
         async def send(update):
             session.sent.clear()

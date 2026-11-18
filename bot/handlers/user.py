@@ -3,6 +3,7 @@ import re
 from html import escape
 
 from aiogram import Bot, F, Router
+from aiogram.filters import StateFilter
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
 from aiogram.types import CallbackQuery, Message
@@ -10,7 +11,7 @@ from aiogram.types import CallbackQuery, Message
 from .. import keyboards as kb
 from .. import services
 from .. import texts as T
-from ..answers import AnswerError, parse_answers, preview
+from ..answers import AnswerError, looks_like_answers, parse_answers, preview, split_quick
 from ..config import Config
 from ..db import Database, Test, User
 from ..timeutil import fmt, fmt_left, utcnow
@@ -126,7 +127,7 @@ async def answer_start(call: CallbackQuery, callback_data: kb.TestCb, state: FSM
     await call.answer()
     await call.message.answer(
         T.ASK_ANSWERS.format(title=escape(t.title), n=t.n, deadline=fmt(t.deadline_at),
-                             left=fmt_left(t.deadline_at - utcnow())),
+                             left=fmt_left(t.deadline_at - utcnow()), code=t.id),
         reply_markup=kb.cancel_kb())
 
 
@@ -137,15 +138,23 @@ async def answer_text(message: Message, state: FSMContext, db: Database, user: U
     if err:
         await state.clear()
         return await message.answer(err)
+    _, body = split_quick(message.text)
+    await _ask_confirm(message, state, t, body)
+
+
+async def _ask_confirm(message: Message, state: FSMContext, t: Test, text: str) -> None:
+    """Javoblarni o'qib, tasdiqlash uchun ko'rsatadi (xato bo'lsa — sababini aytadi)."""
     try:
-        answers = parse_answers(message.text, t.n, allow_blank=True)
+        answers = parse_answers(text, t.n, allow_blank=True)
     except AnswerError as e:
-        return await message.answer(f"❌ {e}\n\nQaytadan yuboring.")
+        await state.set_state(Answer.text)
+        await state.update_data(test_id=t.id)
+        return await message.answer(f"❌ «{escape(t.title)}»: {e}\n\nQaytadan yuboring.")
     blanks = [str(i + 1) for i, ch in enumerate(answers) if ch == "-"]
     blank_note = f"Javobsiz savollar: {', '.join(blanks)}\n" if blanks else ""
     await state.set_state(Answer.confirm)
-    await state.update_data(answers=answers)
-    await message.answer(T.CONFIRM_ANSWERS.format(preview=preview(answers), blank=blank_note),
+    await state.update_data(test_id=t.id, answers=answers)
+    await message.answer(f"📝 <b>{escape(t.title)}</b>\n" + T.CONFIRM_ANSWERS.format(preview=preview(answers), blank=blank_note),
                          reply_markup=kb.confirm_answers_kb(t.id))
 
 
@@ -255,3 +264,26 @@ async def profile(message: Message, db: Database, user: User, is_admin: bool, is
             avg_s = f", o'rtacha {avg:.0f}%" if avg is not None else ""
             lines.append(f"📁 {escape(g.name)}: <b>{coins}</b> 🪙 · {place}-o'rin · {cnt} ta test{avg_s}")
     await message.answer("\n".join(lines))
+
+
+# ---------------- tez yuborish: "kod*javoblar" yoki shunchaki "abcd..." ----------------
+
+@router.message(StateFilter(None), F.text)
+async def quick_answers(message: Message, state: FSMContext, db: Database, user: User):
+    code, body = split_quick(message.text)
+    if code is None and not looks_like_answers(message.text):
+        return  # oddiy gap — e'tiborsiz qoldiramiz
+    if code is not None:
+        t, err = await _open_test_for(db, code, user)
+        if err:
+            return await message.answer(f"Test kodi {code}: {err}")
+        return await _ask_confirm(message, state, t, body)
+
+    pending = [t for t in await db.user_open_tests(user.id) if not await db.get_submission(t.id, user.id)]
+    if not pending:
+        return await message.answer(T.NO_ACTIVE_TESTS)
+    if len(pending) > 1:
+        lines = ["Sizda bir nechta faol test bor. Kod bilan yuboring:", ""]
+        lines += [f"• <code>{t.id}*...</code> — {escape(t.title)} ({t.n} ta savol)" for t in pending]
+        return await message.answer("\n".join(lines))
+    await _ask_confirm(message, state, pending[0], body)

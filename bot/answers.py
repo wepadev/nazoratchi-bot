@@ -75,3 +75,18 @@ def preview(answers: str, per_row: int = 5) -> str:
     cells = [f"{i + 1:>3}-{ch}" for i, ch in enumerate(answers)]
     rows = [" ".join(cells[i:i + per_row]) for i in range(0, len(cells), per_row)]
     return "<pre>" + "\n".join(rows) + "</pre>"
+
+
+_QUICK = re.compile(r"^\s*(\d{1,7})\s*\*\s*(.+)$", re.S)
+
+
+def split_quick(text: str) -> tuple[int | None, str]:
+    """'1024*abcd' -> (1024, 'abcd'); kodsiz bo'lsa (None, matn)."""
+    m = _QUICK.match(text or "")
+    return (int(m.group(1)), m.group(2)) if m else (None, text or "")
+
+
+def looks_like_answers(text: str) -> bool:
+    """Matn javoblar qatoriga o'xshaydimi (oddiy gap emasmi)."""
+    s = re.sub(r"[\s\d.,;:)\-=_/|*]+", "", (text or "").lower().translate(_CYR))
+    return len(s) >= 2 and set(s) <= set(VALID)
