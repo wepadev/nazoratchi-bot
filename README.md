@@ -1,25 +1,51 @@
 # Nazoratchi bot
 
-Telegram bot: foydalanuvchilar ro'yxatdan o'tadi, adminlar guruh yaratadi,
-foydalanuvchilar admin bergan **kod** orqali guruhga qo'shiladi.
+Matematikadan attestatsiya va milliy sertifikatga tayyorlanayotgan ustozlar uchun Telegram bot.
+Nazoratchilar test (javoblar kaliti bilan) nashr qiladi, ustozlar javob yuboradi,
+bot avtomatik tekshiradi, tanga beradi va reyting tuzadi.
 
-## Imkoniyatlar
+## Rollar
 
-**Foydalanuvchi**
-- Ro'yxatdan o'tish: telefon raqam (faqat o'zining, Telegram tugmasi orqali) + ism-familiya
-- ➕ Guruhga qo'shilish — 6 belgili kod orqali (katta-kichik harf farqi yo'q)
-- 📚 Mening guruhlarim — ro'yxat va guruhdan chiqish
-- 👤 Profil
+| Rol | Kim belgilaydi | Imkoniyatlar |
+|---|---|---|
+| **Bosh admin** | `.env` → `SUPER_ADMIN_IDS` | Guruh yaratadi, nazoratchi qo'shadi va guruhlarga tayinlaydi, hamma narsani ko'radi, nazoratchilar faoliyati |
+| **Nazoratchi** | Bosh admin | Faqat o'ziga tayinlangan guruhlar: testlar, ustozlar, reyting, tanga, e'tirozlar, Excel |
+| **Ustoz** | Ro'yxatdan o'tgan har kim | Kod orqali guruhga qo'shiladi, test javoblarini yuboradi, reyting va profil |
 
-**Admin**
-- 🆕 Guruh yaratish — avtomatik noyob kod beriladi
-- 🗂 Guruhlarni boshqarish — a'zolar ro'yxati (ism, telefon), a'zoni chiqarish,
-  yangi kod (eskisi bekor bo'ladi), nomini o'zgartirish, o'chirish
-- Guruhga yangi a'zo qo'shilganda bildirishnoma
+## Asosiy jarayon
 
-**Bosh admin** (`.env` dagi `SUPER_ADMIN_IDS`)
-- Admin huquqlari + barcha guruhlarni ko'radi
-- 👮 Adminlar — telefon raqam yoki Telegram ID orqali admin qo'shish / olib tashlash
+1. Bosh admin: **🆕 Guruh yaratish** → nazoratchilarni belgilaydi. Guruh kodi ustozlarga beriladi.
+2. Ustoz: **➕ Guruhga qo'shilish** → kodni kiritadi.
+3. Nazoratchi: **🗂 Guruhlar → guruh → 📝 Testlar → ➕ Yangi test** → nom → fayl (PDF/rasm, ixtiyoriy) → kalit (`abcd...` yoki `1a 2b ...`).
+4. **🚀 Nashr qilish** → muddat (12 soat … 1 hafta yoki aniq sana). Guruhda bir vaqtda **bitta** faol test bo'ladi;
+   agar faol test bo'lsa, yangisi **navbatga** qo'yiladi va oldingisi yakunlanishi bilan avtomatik nashr qilinadi.
+5. Ustozlar **✍️ Javob yuborish** → javoblar → tasdiqlash. Bot darhol natijani aytadi (`27/30`), javob faqat bir marta qabul qilinadi.
+6. Topshirmaganlarga har **3 soatda** eslatma (tunda emas) va muddatdan **1 soat** oldin oxirgi eslatma.
+7. Muddat tugaganda:
+   - topshirmaganlardan **−5 tanga** (test nashridan keyin qo'shilganlarga jarima yo'q);
+   - har bir ustozga xatolari va to'g'ri javoblar yuboriladi (kalit faqat shu paytda ochiladi);
+   - nazoratchiga hisobot: topshirganlar, o'rtacha natija, eng ko'p xato qilingan savollar,
+     topshirmaganlar, **ketma-ket 2 ta testni topshirmaganlar**.
+
+## Tanga va reyting
+
+- Har bir to'g'ri javob: **+1**, topshirmaslik: **−5** (`.env` da o'zgartiriladi).
+- Har bir tanga sababi bilan yoziladi (Excel'dagi «Tangalar tarixi»).
+- Reyting **har bir guruh uchun alohida**: umumiy / shu hafta / o'tgan hafta. Teng tangalilar bir o'rinda.
+- Ustoz o'z o'rnini va TOP-10 ga qancha tanga qolganini ko'radi.
+- Har dushanba soat 9:00 da o'tgan hafta reytingi hamma ustoz va nazoratchilarga yuboriladi.
+- Nazoratchi qo'lda tanga berishi/ayirishi mumkin (faqat sabab bilan).
+
+## E'tiroz va kalitni tuzatish
+
+- Test yakunlangach, xatosi bor ustozda **⚖️ E'tiroz bildirish** tugmasi chiqadi.
+- Nazoratchi: **✅ Qabul (+1)**, **❌ Rad etish** yoki **🔑 Kalitni tuzatish**.
+- Kalit tuzatilsa, barcha natijalar qayta hisoblanadi, tangalar avtomatik to'g'rilanadi va ustozlarga xabar boradi.
+
+## Hisobotlar
+
+- **📥 Excel** (guruh kartochkasida): Reyting, Natijalar (ustoz × test), Savollar tahlili, Testlar, Tangalar tarixi.
+- **📈 Faoliyat** (bosh admin): har bir nazoratchining testlari, e'tirozlarga javob tezligi, ochiq e'tirozlar.
 
 ## Ishga tushirish
 
@@ -30,18 +56,27 @@ cp .env.example .env   # BOT_TOKEN va SUPER_ADMIN_IDS ni to'ldiring
 python -m bot
 ```
 
+Bosh admin ham avval botda `/start` orqali ro'yxatdan o'tadi.
+
+> Agar botning birinchi versiyasini ishga tushirgan bo'lsangiz, eski `data/bot.db` faylini o'chiring —
+> ma'lumotlar tuzilmasi o'zgardi.
+
 Testlar: `pip install pytest && python -m pytest -q`
 
 ## Tuzilma
 
 ```
 bot/
-  __main__.py        ishga tushirish
-  config.py          .env sozlamalari
-  db.py              SQLite (users, groups, group_members)
-  texts.py           barcha matnlar (o'zbekcha)
-  keyboards.py       tugmalar
-  theme.py           brend ranglari va shriftlari (Mini App uchun)
-  middlewares.py     har bir so'rovga db / foydalanuvchi / huquqlar
-  handlers/          common (start, ro'yxat), user, admin, superadmin
+  __main__.py      ishga tushirish (bot + fon jarayoni)
+  config.py        .env sozlamalari
+  db.py            SQLite: users, groups, group_admins, group_members, tests, submissions, coins, appeals
+  answers.py       javoblarni o'qish (abcd / 1a 2b / kirill) va tekshirish
+  services.py      nashr, javob, yakunlash, eslatma, reyting, kalitni tuzatish
+  scheduler.py     har 30 soniyada: muddatlar, eslatmalar, haftalik reyting
+  excel.py         Excel hisobot (brend ranglarida)
+  timeutil.py      Toshkent vaqti
+  theme.py         brend ranglari va shriftlari
+  texts.py         matnlar,  keyboards.py  tugmalar
+  handlers/        common (ro'yxat), superadmin, groups, tests_admin, appeals, user (ustoz)
+tests/             avtomatik testlar (to'liq stsenariy ham bor)
 ```

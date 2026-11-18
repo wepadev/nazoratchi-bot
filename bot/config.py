@@ -11,6 +11,21 @@ class Config:
     bot_token: str
     super_admin_ids: frozenset[int]
     db_path: str
+    reminder_interval_hours: float = 3.0     # topshirmaganlarga eslatma oralig'i
+    final_reminder_minutes: int = 60          # muddat tugashidan oldingi oxirgi eslatma
+    quiet_hours: tuple[int, int] = (23, 7)    # tunda eslatma yuborilmaydi (Toshkent vaqti)
+    penalty_not_submitted: int = 5            # topshirmaganlik uchun ayiriladigan tanga
+    coins_per_correct: int = 1
+    weekly_rating_weekday: int = 0            # 0 = dushanba
+    weekly_rating_hour: int = 9
+
+
+def _quiet(raw: str) -> tuple[int, int]:
+    try:
+        a, b = raw.split("-")
+        return int(a), int(b)
+    except ValueError:
+        return 23, 7
 
 
 def load_config() -> Config:
@@ -24,4 +39,10 @@ def load_config() -> Config:
         bot_token=token,
         super_admin_ids=ids,
         db_path=os.getenv("DB_PATH", "data/bot.db"),
+        reminder_interval_hours=float(os.getenv("REMINDER_INTERVAL_HOURS", "3")),
+        final_reminder_minutes=int(os.getenv("FINAL_REMINDER_MINUTES", "60")),
+        quiet_hours=_quiet(os.getenv("QUIET_HOURS", "23-7")),
+        penalty_not_submitted=int(os.getenv("PENALTY_NOT_SUBMITTED", "5")),
+        coins_per_correct=int(os.getenv("COINS_PER_CORRECT", "1")),
+        weekly_rating_hour=int(os.getenv("WEEKLY_RATING_HOUR", "9")),
     )

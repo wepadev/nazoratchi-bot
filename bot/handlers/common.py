@@ -23,6 +23,12 @@ class IsAdmin(Filter):
         return is_admin
 
 
+class IsUstoz(Filter):
+    """Oddiy foydalanuvchi (ustoz) — nazoratchi ham, bosh admin ham emas."""
+    async def __call__(self, event: TelegramObject, is_admin: bool = False) -> bool:
+        return not is_admin
+
+
 class IsSuper(Filter):
     async def __call__(self, event: TelegramObject, is_super: bool = False) -> bool:
         return is_super
@@ -95,10 +101,9 @@ async def reg_full_name(message: Message, state: FSMContext, db: Database, is_su
         username=message.from_user.username,
         role="admin" if is_super else "user",
     )
-    await message.answer(
-        T.REGISTERED.format(name=escape(user.full_name)),
-        reply_markup=menu(is_admin=user.is_admin or is_super, is_super=is_super),
-    )
+    admin = user.is_admin or is_super
+    text = T.REGISTERED.format(name=escape(user.full_name)) + ("" if admin else T.REGISTERED_USER_HINT)
+    await message.answer(text, reply_markup=menu(is_admin=admin, is_super=is_super))
 
 
 @router.message(StateFilter(None), ~Registered())
