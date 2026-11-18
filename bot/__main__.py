@@ -5,11 +5,12 @@ from aiogram import Bot, Dispatcher
 from aiogram.client.default import DefaultBotProperties
 from aiogram.enums import ParseMode
 from aiogram.fsm.storage.memory import MemoryStorage
-from aiogram.types import BotCommand
+from aiogram.types import BotCommand, MenuButtonWebApp, WebAppInfo
 
 from .config import load_config
 from .db import Database
-from . import scheduler
+from . import keyboards, scheduler
+from .web.api import start_server
 from .handlers import appeals, common, groups, superadmin, tests_admin, user
 from .middlewares import ContextMiddleware
 
@@ -34,6 +35,13 @@ async def main() -> None:
         BotCommand(command="start", description="Asosiy menyu"),
         BotCommand(command="cancel", description="Bekor qilish"),
     ])
+    # Mini App: veb-server doim ishlaydi, menyu tugmasi faqat WEBAPP_URL berilganda
+    runner = await start_server(db, bot, config)
+    keyboards.WEBAPP_URL = config.webapp_url
+    if config.webapp_url:
+        await bot.set_chat_menu_button(menu_button=MenuButtonWebApp(
+            text="Ilova", web_app=WebAppInfo(url=config.webapp_url + "/")))
+
     # muddatlar, eslatmalar va haftalik reyting uchun fon jarayoni
     bg = asyncio.create_task(scheduler.run(bot, db, config))
     try:
@@ -41,6 +49,7 @@ async def main() -> None:
         await dp.start_polling(bot)
     finally:
         bg.cancel()
+        await runner.cleanup()
         await db.close()
         await bot.session.close()
 

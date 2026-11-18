@@ -18,6 +18,8 @@ class Config:
     coins_per_correct: int = 1
     weekly_rating_weekday: int = 0            # 0 = dushanba
     weekly_rating_hour: int = 9
+    web_port: int = 8080                      # Mini App serveri porti
+    webapp_url: str = ""                       # Mini App'ning ochiq HTTPS manzili
 
 
 def _quiet(raw: str) -> tuple[int, int]:
@@ -45,4 +47,6 @@ def load_config() -> Config:
         penalty_not_submitted=int(os.getenv("PENALTY_NOT_SUBMITTED", "5")),
         coins_per_correct=int(os.getenv("COINS_PER_CORRECT", "1")),
         weekly_rating_hour=int(os.getenv("WEEKLY_RATING_HOUR", "9")),
+        web_port=int(os.getenv("PORT", "8080")),
+        webapp_url=os.getenv("WEBAPP_URL", "").strip().rstrip("/"),
     )

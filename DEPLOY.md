@@ -36,3 +36,12 @@ Bu bo'lmasa, har yangilanishda ro'yxatdan o'tganlar va natijalar o'chib ketadi.
 - Bot bir vaqtda faqat **bitta joyda** ishlashi kerak. Kompyuterda ham ishga tushirsangiz,
   Telegram xato beradi (`Conflict`). Kompyuterdagisini to'xtating.
 - Kodni yangilasak, Railway o'zi qayta o'rnatadi — sizdan hech narsa talab qilinmaydi.
+
+---
+
+# Mini App'ni yoqish (Northflank)
+
+1. Xizmat → **Networking** → **Add port**: port `8080`, protocol **HTTP**, **Publicly expose** yoqilgan → saqlang.
+2. Northflank ochiq manzil beradi (masalan `https://p01--nazoratchi-bot--xxxx.code.run`). Uni nusxalang.
+3. **Environment** → `WEBAPP_URL` = shu manzil (oxirida `/` siz) → **Update & restart**.
+4. Telegram'da botni qayta oching: pastki chap burchakda **Ilova** tugmasi chiqadi.

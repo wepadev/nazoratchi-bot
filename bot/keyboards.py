@@ -1,8 +1,12 @@
 from aiogram.filters.callback_data import CallbackData
-from aiogram.types import InlineKeyboardMarkup, KeyboardButton, ReplyKeyboardMarkup
+from aiogram.types import (InlineKeyboardButton, InlineKeyboardMarkup, KeyboardButton, ReplyKeyboardMarkup,
+                           WebAppInfo)
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 
 from . import texts as T
+
+# Mini App manzili (ishga tushirishda config'dan o'rnatiladi; bo'sh bo'lsa ilova tugmalari chiqmaydi)
+WEBAPP_URL = ""
 
 # ---------------- callback data ----------------
 
@@ -185,7 +189,11 @@ def confirm_kb(yes: tuple[str, CallbackData], no: tuple[str, CallbackData]) -> I
 
 
 def answer_kb(test_id: int) -> InlineKeyboardMarkup:
-    return _build([("✍️ Javob yuborish", TestCb(action="answer", test_id=test_id))])
+    markup = _build([("✍️ Javob yuborish", TestCb(action="answer", test_id=test_id))])
+    if WEBAPP_URL:
+        markup.inline_keyboard.insert(0, [InlineKeyboardButton(
+            text="📱 Varaqada belgilash", web_app=WebAppInfo(url=f"{WEBAPP_URL}/#/test/{test_id}"))])
+    return markup
 
 
 def confirm_answers_kb(test_id: int) -> InlineKeyboardMarkup:

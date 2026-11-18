@@ -47,6 +47,17 @@ bot avtomatik tekshiradi, tanga beradi va reyting tuzadi.
 - **📥 Excel** (guruh kartochkasida): Reyting, Natijalar (ustoz × test), Savollar tahlili, Testlar, Tangalar tarixi.
 - **📈 Faoliyat** (bosh admin): har bir nazoratchining testlari, e'tirozlarga javob tezligi, ochiq e'tirozlar.
 
+## Mini App (bot ichidagi ilova)
+
+Bot bilan bir serverda ishlaydi (`bot/web/`). `WEBAPP_URL` berilsa, botning menyu tugmasi va test xabarlarida
+«📱 Varaqada belgilash» tugmasi paydo bo'ladi.
+
+- **Ustoz:** tangalar va o'rin, faol testlar (qolgan vaqt), A/B/C/D javob varaqasi, natijalar
+  (yakunlangach to'g'ri/xato javoblar), reyting (umumiy / shu hafta / o'tgan hafta).
+- **Nazoratchi:** guruhlar paneli, faol test qanchalik topshirilgani, har savol bo'yicha xato foizi,
+  natijalar va topshirmaganlar ro'yxati.
+- Kirish Telegram imzosi (initData) bilan tekshiriladi; tungi rejimni qo'llab-quvvatlaydi.
+
 ## Ishga tushirish
 
 ```bash

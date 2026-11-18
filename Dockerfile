@@ -11,4 +11,6 @@ COPY bot ./bot
 
 # Ma'lumotlar bazasi /app/data ichida saqlanadi — hostingda shu papkaga doimiy disk (volume) ulanadi
 RUN mkdir -p /app/data
+# Mini App veb-serveri
+EXPOSE 8080
 CMD ["python", "-m", "bot"]
