@@ -348,3 +348,44 @@ async def weekly_rating(bot: Bot, db: Database, cfg: Config, now: datetime) -> N
             await safe_send(bot, m.id, "📅 <b>Haftalik natijalar</b>\n\n" + text)
         admin_text = await rating_text(db, group, "lastweek", now, limit=30)
         await notify_admins(bot, db, cfg, group.id, "📅 <b>Haftalik natijalar</b>\n\n" + admin_text)
+
+
+# ---------------- umumiy amallar (bot va Mini App uchun) ----------------
+
+async def resolve_appeal(bot: Bot, db: Database, appeal, test: Test, action: str, admin: User,
+                         now: datetime) -> str | None:
+    """action: accept | reject | fixkey. Natija matnini qaytaradi; allaqachon hal qilingan bo'lsa None."""
+    status = "rejected" if action == "reject" else "accepted"
+    if not await db.resolve_appeal(appeal.id, status, admin.id, now):
+        return None
+    q = f" (№{appeal.question})" if appeal.question else ""
+    title = escape(test.title)
+    if action == "accept":
+        await db.add_coins(appeal.user_id, test.group_id, 1, f"«{test.title}»: e'tiroz qabul qilindi{q}", now,
+                           test_id=test.id, created_by=admin.id)
+        await safe_send(bot, appeal.user_id, f"✅ «{title}» bo'yicha e'tirozingiz{q} qabul qilindi: +1 {COIN}")
+        return f"✅ Qabul qilindi (+1 {COIN})"
+    if action == "reject":
+        await safe_send(bot, appeal.user_id, f"❌ «{title}» bo'yicha e'tirozingiz{q} rad etildi.")
+        return "❌ Rad etildi"
+    await safe_send(bot, appeal.user_id, f"✅ «{title}» bo'yicha e'tirozingiz{q} qabul qilindi — kalit tuzatiladi.")
+    return "🔑 Kalit tuzatilmoqda"
+
+
+async def manual_coins(bot: Bot, db: Database, group: Group, target: User, amount: int, reason: str,
+                       admin: User, now: datetime) -> None:
+    await db.add_coins(target.id, group.id, amount, reason, now, created_by=admin.id)
+    sign = "+" if amount > 0 else "−"
+    await safe_send(bot, target.id, f"{COIN} <b>{sign}{abs(amount)} tanga</b> ({escape(group.name)})\nSabab: {escape(reason)}")
+
+
+async def publish_or_queue(bot: Bot, db: Database, cfg: Config, test: Test, now: datetime,
+                           hours: int | None = None, deadline: datetime | None = None) -> str:
+    """'published' | 'queued' | 'busy' (faol test bor va aniq sana berilgan — navbatga qo'yib bo'lmaydi)."""
+    if await db.active_test(test.group_id):
+        if not hours:
+            return "busy"
+        await db.queue_test(test.id, hours, now)
+        return "queued"
+    dl = deadline or now + timedelta(hours=hours or 24)
+    return "published" if await publish(bot, db, cfg, test, dl, now) else "busy"

@@ -196,7 +196,8 @@ async def admin_groups(request: web.Request) -> web.Response:
         if a:
             active = test_brief(a) | {"submitted": len(await db.list_submissions(a.id))}
         out.append({"id": g.id, "name": g.name, "code": g.code, "members": g.member_count, "active": active})
-    return web.json_response({"groups": out})
+    open_appeals = len(await db.open_appeals(None if request[R_SUPER] else request[R_USER].id))
+    return web.json_response({"groups": out, "appeals_open": open_appeals})
 
 
 @admin_only
@@ -235,7 +236,10 @@ async def admin_test(request: web.Request) -> web.Response:
     missing = [u.full_name for u in await db.non_submitters(t, only_before_publish=False)] \
         if t.status in ("published", "closed") else []
     avg = round(sum(s.correct for s in subs) / len(subs), 1) if subs else None
+    active = await db.active_test(t.group_id)
     return web.json_response(test_brief(t) | {
+        "queue_hours": t.queue_hours, "has_file": bool(t.file_id),
+        "active_other": active.title if active and active.id != t.id else None,
         "group_id": t.group_id, "key": t.answer_key, "members": len(members), "submitted": len(subs),
         "avg": avg, "questions": questions, "results": results, "missing": missing})
 
@@ -251,7 +255,7 @@ async def health(request: web.Request) -> web.Response:
 
 
 def create_app(db: Database, bot: Bot, cfg: Config) -> web.Application:
-    app = web.Application(middlewares=[auth_middleware], client_max_size=64 * 1024)
+    app = web.Application(middlewares=[auth_middleware], client_max_size=16 * 1024 * 1024)  # fayl yuklash uchun
     app[K_DB], app[K_BOT], app[K_CFG] = db, bot, cfg
     app.router.add_get("/", index)
     app.router.add_get("/health", health)
@@ -264,6 +268,8 @@ def create_app(db: Database, bot: Bot, cfg: Config) -> web.Application:
     app.router.add_get("/api/admin/groups", admin_groups)
     app.router.add_get(r"/api/admin/groups/{group_id:\d+}", admin_group)
     app.router.add_get(r"/api/admin/tests/{test_id:\d+}", admin_test)
+    from . import admin_api
+    admin_api.setup(app)
     return app
 
 

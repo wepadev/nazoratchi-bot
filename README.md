@@ -61,8 +61,10 @@ Bot bilan bir serverda ishlaydi (`bot/web/`). `WEBAPP_URL` berilsa, botning meny
 
 - **Ustoz:** tangalar va o'rin, faol testlar (qolgan vaqt), A/B/C/D javob varaqasi, natijalar
   (yakunlangach to'g'ri/xato javoblar), reyting (umumiy / shu hafta / o'tgan hafta).
-- **Nazoratchi:** guruhlar paneli, faol test qanchalik topshirilgani, har savol bo'yicha xato foizi,
-  natijalar va topshirmaganlar ro'yxati.
+- **Nazoratchi:** guruhlar paneli; test yaratish (kalit varaqasi yoki matndan, PDF/rasm yuklash), nashr / navbat,
+  eslatma, hozir yakunlash, kalitni tuzatish; har savol bo'yicha xato foizi; ustozlar, tanga berish, guruhdan chiqarish,
+  yangi kod, Excel (botga yuboriladi); e'tirozlar.
+- **Bosh admin:** guruh yaratish, nomini o'zgartirish, o'chirish; nazoratchi qo'shish va guruhlarga tayinlash.
 - Kirish Telegram imzosi (initData) bilan tekshiriladi; tungi rejimni qo'llab-quvvatlaydi.
 
 ## Ishga tushirish

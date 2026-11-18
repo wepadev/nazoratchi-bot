@@ -53,26 +53,10 @@ async def resolve(call: CallbackQuery, callback_data: kb.AppealCb, db: Database,
     t = await test_access(db, a.test_id, user, is_super) if a else None
     if not a or not t:
         return await call.answer(T.NOT_FOUND, show_alert=True)
-    now = utcnow()
-    action = callback_data.action
-    status = "rejected" if action == "reject" else "accepted"
-    if not await db.resolve_appeal(a.id, status, user.id, now):
+    verdict = await services.resolve_appeal(bot, db, a, t, callback_data.action, user, utcnow())
+    if verdict is None:
         return await call.answer("Bu e'tiroz allaqachon ko'rib chiqilgan.", show_alert=True)
-
-    q = f" (№{a.question})" if a.question else ""
-    if action == "accept":
-        await db.add_coins(a.user_id, t.group_id, 1, f"«{t.title}»: e'tiroz qabul qilindi{q}", now,
-                           test_id=t.id, created_by=user.id)
-        await services.safe_send(bot, a.user_id, f"✅ «{escape(t.title)}» bo'yicha e'tirozingiz{q} qabul qilindi: +1 🪙")
-        verdict = "✅ Qabul qilindi (+1 🪙)"
-    elif action == "reject":
-        await services.safe_send(bot, a.user_id, f"❌ «{escape(t.title)}» bo'yicha e'tirozingiz{q} rad etildi.")
-        verdict = "❌ Rad etildi"
-    else:
-        await services.safe_send(bot, a.user_id,
-                                 f"✅ «{escape(t.title)}» bo'yicha e'tirozingiz{q} qabul qilindi — kalit tuzatiladi.")
-        verdict = "🔑 Kalit tuzatilmoqda"
     await call.answer()
     await call.message.edit_text(call.message.html_text + f"\n\n<b>{verdict}</b> — {escape(user.full_name)}")
-    if action == "fixkey":
+    if callback_data.action == "fixkey":
         await start_fixkey(call.message, state, t)
