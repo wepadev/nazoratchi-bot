@@ -37,9 +37,9 @@ async def setup(**cfg_kw):
     return db, cfg, session, bot, g
 
 
-def test_daily_reminder():
+def test_open_reminder_every_interval():
     async def scenario():
-        db, cfg, session, bot, g = await setup(daily_reminder_hour=0, quiet_hours=(0, 0))
+        db, cfg, session, bot, g = await setup(quiet_hours=(0, 0))
         now = utcnow()
         t1 = await db.create_test(g.id, "Uy vazifa 1", "AB", None, None, ADMIN)
         t2 = await db.create_test(g.id, "Uy vazifa 2", "CD", None, None, ADMIN)
@@ -47,20 +47,34 @@ def test_daily_reminder():
             await services.publish(bot, db, cfg, t, None, now)
         await services.submit(db, cfg, await db.get_test(t1.id), await db.get_user(U1), "AB", now)
 
-        session.sent.clear()
-        await services.send_reminders(bot, db, cfg, now + timedelta(days=2))
-        msgs = {m.chat_id: out_text(m) for m in session.sent}
-        assert set(msgs) == {U1, U2}                      # har biriga bitta xabar
-        assert "1 ta" in msgs[U1] and "Uy vazifa 2" in msgs[U1] and "Uy vazifa 1" not in msgs[U1]
-        assert "2 ta" in msgs[U2]
-        session.sent.clear()
-        await services.send_reminders(bot, db, cfg, now + timedelta(days=2, minutes=5))
-        assert session.sent == []                        # kuniga bir marta
-        # muddatsiz test o'z-o'zidan yopilmaydi
-        assert await db.due_tests(now + timedelta(days=365)) == []
+        async def tick(at):
+            session.sent.clear()
+            await services.send_reminders(bot, db, cfg, at)
+            return {m.chat_id: out_text(m) for m in session.sent}
+
+        assert await tick(now + timedelta(hours=1)) == {}           # e'londan keyin darhol emas
+        first = await tick(now + timedelta(hours=3, minutes=1))
+        assert set(first) == {U1, U2}                              # har biriga bitta xabar
+        assert "1 ta" in first[U1] and "Uy vazifa 2" in first[U1] and "Uy vazifa 1" not in first[U1]
+        assert "2 ta" in first[U2] and "+4</b> tangagacha" in first[U2]
+        assert await tick(now + timedelta(hours=4)) == {}           # 3 soat o'tmagan
+        second = await tick(now + timedelta(hours=6, minutes=2))
+        assert set(second) == {U1, U2}
+        # har safar boshqa sarlavha
+        assert first[U2].split("\n")[0] != second[U2].split("\n")[0]
+        assert await db.due_tests(now + timedelta(days=365)) == []  # muddatsiz test o'zi yopilmaydi
         await db.close()
 
     asyncio.run(scenario())
+
+
+def test_motivation_never_repeats_back_to_back():
+    from bot import motivation
+    seen = [motivation.headline(999) for _ in range(len(motivation.HEADLINES))]
+    assert len(set(seen)) == len(seen)                             # bir aylanishda takror yo'q
+    for _ in range(200):
+        a, b = motivation.headline(998), motivation.headline(998)
+        assert a != b
 
 
 def test_recordings_bot():

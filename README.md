@@ -22,8 +22,9 @@ bot avtomatik tekshiradi, tanga beradi va reyting tuzadi.
 4. **🚀 Nashr qilish** → **♾ Muddatsiz** (standart) yoki muddat (1 kun … 1 hafta, aniq sana). Bir guruhda bir vaqtda
    **bir nechta** test faol bo'lishi mumkin. Muddatsiz test nazoratchi **Hozir yakunlash** ni bosmaguncha faol turadi.
 5. Ustozlar **✍️ Javob yuborish** → javoblar → tasdiqlash. Bot darhol natijani aytadi (`27/30`), javob faqat bir marta qabul qilinadi.
-6. Eslatmalar: muddatli testlarda topshirmaganlarga har **3 soatda** (tunda emas) va muddatdan **1 soat** oldin;
-   muddatsiz testlarda **kuniga bir marta** (19:00) — har bir ustozga bitta xabarda barcha topshirilmagan testlari.
+6. Eslatmalar har **3 soatda** (tunda emas): muddatli testda har test bo'yicha, muddatsiz testlarda har bir ustozga
+   **bitta umumiy** xabar; muddatli testda muddatdan **1 soat** oldin oxirgi eslatma. Matnlar motivatsion va **har safar
+   har xil** (`bot/motivation.py`): tanga imkoniyati, reytingdagi o'rin, nechta guruhdoshi topshirgani.
    Muddatsiz testda ustoz javob yuborishi bilan **xato savollar raqamini** ko'radi; to'g'ri javoblar va −5 jarima
    test yakunlanganda.
 7. Muddat tugaganda:

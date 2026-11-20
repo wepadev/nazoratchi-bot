@@ -96,7 +96,7 @@ def test_full_flow():
         db = Database(":memory:")
         await db.connect()
         cfg = Config(bot_token="1:x", super_admin_ids=frozenset({SUPER}), db_path=":memory:",
-                     quiet_hours=(0, 0), daily_reminder_hour=24)
+                     quiet_hours=(0, 0))
         session = FakeSession()
         bot = Bot("123:abc", session=session)
         dp = build_dispatcher(db, cfg)
@@ -193,11 +193,14 @@ def test_full_flow():
         out = await click(U2, kb.TestCb(action="confirm", test_id=t1.id))
         assert any("2/5" in t for t in to(out, U2))
 
-        # --- eslatma faqat topshirmaganga (U3) ---
+        # --- eslatmalar: muddatli test — faqat topshirmaganga (U3); muddatsiz test — hammaga bitta umumiy xabar ---
         session.sent.clear()
         await services.send_reminders(bot, db, cfg, utcnow() + timedelta(hours=3, minutes=5))
-        assert [m.chat_id for m in session.sent] == [U3]
-        assert "Eslatma" in out_text(session.sent[0])
+        deadline_msgs = [m for m in session.sent if "1-hafta: Logarifmlar" in out_text(m)]
+        assert [m.chat_id for m in deadline_msgs] == [U3]
+        assert "Muddat" in out_text(deadline_msgs[0]) and "tangagacha" in out_text(deadline_msgs[0])
+        open_msgs = [m for m in session.sent if "2-hafta" in out_text(m)]
+        assert sorted(m.chat_id for m in open_msgs) == [U1, U2, U3]
 
         # --- muddat tugadi: yakunlash ---
         t1 = await db.get_test(t1.id)

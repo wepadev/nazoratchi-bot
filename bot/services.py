@@ -15,10 +15,11 @@ from aiogram.exceptions import TelegramForbiddenError, TelegramRetryAfter
 from aiogram.types import InlineKeyboardMarkup
 
 from . import keyboards as kb
+from . import motivation
 from .answers import grade, mistakes, preview
 from .config import Config
 from .db import Database, Group, Lesson, Test, User
-from .timeutil import fmt, fmt_left, is_quiet, local, week_start
+from .timeutil import fmt, fmt_left, from_db, is_quiet, local, to_db, week_start
 
 log = logging.getLogger(__name__)
 MEDALS = {1: "🥇", 2: "🥈", 3: "🥉"}
@@ -243,10 +244,63 @@ async def close(bot: Bot, db: Database, cfg: Config, test: Test, now: datetime) 
 
 # ---------------- eslatmalar ----------------
 
+class _ReminderContext:
+    """Eslatma matni uchun ma'lumotlar (bir tick ichida keshlanadi)."""
+
+    def __init__(self, db: Database):
+        self.db = db
+        self._places: dict[int, dict[int, int]] = {}
+        self._submitted: dict[int, int] = {}
+
+    async def place(self, group_id: int, user_id: int) -> int | None:
+        if group_id not in self._places:
+            self._places[group_id] = {u.id: p for p, u, _ in ranked(await self.db.rating(group_id))}
+        return self._places[group_id].get(user_id)
+
+    async def submitted(self, test_id: int) -> int:
+        if test_id not in self._submitted:
+            self._submitted[test_id] = len(await self.db.list_submissions(test_id))
+        return self._submitted[test_id]
+
+
+async def deadline_reminder_text(ctx: _ReminderContext, cfg: Config, uid: int, t: Test, now: datetime,
+                                 final: bool) -> str:
+    lines = [f"<b>{motivation.headline(uid, final)}</b>", "",
+             f"📝 «{escape(t.title)}» — hali topshirilmagan",
+             f"⏳ Muddat: {fmt(t.deadline_at)} — {fmt_left(t.deadline_at - now)} qoldi"]
+    done = await ctx.submitted(t.id)
+    if done:
+        lines.append(f"👥 Guruhdoshlaringizdan {done} nafari topshirib bo'ldi")
+    lines.append(f"{COIN} +{t.n * cfg.coins_per_correct} tangagacha · ⚠️ topshirmasangiz −{cfg.penalty_not_submitted}")
+    place = await ctx.place(t.group_id, uid)
+    if place:
+        lines.append(f"📍 Hozir reytingda {place}-o'rindasiz")
+    lines += [f"⚡️ Tez yuborish: <code>{t.id}*abcd...</code>", "", motivation.cta(uid)]
+    return "\n".join(lines)
+
+
+async def open_reminder_text(ctx: _ReminderContext, cfg: Config, uid: int, tests: list[Test]) -> str:
+    lines = [f"<b>{motivation.headline(uid)}</b>", "", f"Sizni <b>{len(tests)} ta</b> test kutyapti:"]
+    for t in tests[:15]:
+        done = await ctx.submitted(t.id)
+        extra = f" · {done} nafar topshirdi" if done else ""
+        lines.append(f"• «{escape(t.title)}» — {t.n} savol · kod <code>{t.id}</code>{extra}")
+    total = sum(t.n for t in tests) * cfg.coins_per_correct
+    lines += ["", f"{COIN} Hammasini ishlasangiz: <b>+{total}</b> tangagacha",
+              f"⚠️ Topshirilmagan har bir test: −{cfg.penalty_not_submitted} (test yakunlanganda)"]
+    place = await ctx.place(tests[0].group_id, uid)
+    if place:
+        lines.append(f"📍 Hozir reytingda {place}-o'rindasiz")
+    lines += ["⚡️ Tez yuborish: <code>kod*abcd...</code>", "", motivation.cta(uid)]
+    return "\n".join(lines)
+
+
 async def send_reminders(bot: Bot, db: Database, cfg: Config, now: datetime) -> None:
     interval = timedelta(hours=cfg.reminder_interval_hours)
     final_window = timedelta(minutes=cfg.final_reminder_minutes)
     quiet = is_quiet(now, *cfg.quiet_hours)
+    ctx = _ReminderContext(db)
+    # muddatli testlar: har test uchun alohida, muddatdan oldin oxirgi eslatma (tunda ham)
     for t in await db.published_tests():
         if not t.deadline_at or t.deadline_at <= now:
             continue
@@ -256,37 +310,34 @@ async def send_reminders(bot: Bot, db: Database, cfg: Config, now: datetime) -> 
                    and now - (t.reminded_at or t.published_at) >= interval)
         if not (final or regular):
             continue
-        icon = "🔥" if final else "⏰"
-        text = (f"{icon} <b>Eslatma:</b> «{escape(t.title)}» testini hali topshirmadingiz.\n\n"
-                f"Muddat: <b>{fmt(t.deadline_at)}</b> — {fmt_left(left)} qoldi.\n"
-                f"Tez yuborish: <code>{t.id}*abcd...</code>\n"
-                f"Topshirmaslik: −{cfg.penalty_not_submitted} {COIN}")
         for u in await db.non_submitters(t, only_before_publish=False):
-            await safe_send(bot, u.id, text, kb.answer_kb(t.id))
+            await safe_send(bot, u.id, await deadline_reminder_text(ctx, cfg, u.id, t, now, final), kb.answer_kb(t.id))
         await db.set_reminded(t.id, now, final=final)
-    await daily_open_reminder(bot, db, cfg, now)
+    await open_tests_reminder(bot, db, cfg, now, ctx)
 
 
-async def daily_open_reminder(bot: Bot, db: Database, cfg: Config, now: datetime) -> None:
-    """Muddatsiz testlar: kuniga bir marta, har bir ustozga bitta xabarda barcha topshirilmagan testlari."""
-    loc = local(now)
-    if loc.hour < cfg.daily_reminder_hour or is_quiet(now, *cfg.quiet_hours):
+async def open_tests_reminder(bot: Bot, db: Database, cfg: Config, now: datetime,
+                              ctx: _ReminderContext | None = None) -> None:
+    """Muddatsiz testlar: har REMINDER_INTERVAL_HOURS da (tunda emas) har bir ustozga BITTA umumiy xabar.
+    Test nashr qilinganidan keyin kamida shuncha vaqt o'tgan bo'lishi kerak (e'londan darhol keyin eslatma bormaydi)."""
+    if is_quiet(now, *cfg.quiet_hours):
         return
-    today = loc.strftime("%Y-%m-%d")
-    if await db.get_setting("daily_reminder_sent") == today:
+    interval = timedelta(hours=cfg.reminder_interval_hours)
+    last = from_db(await db.get_setting("open_reminder_at"))
+    if last and now - last < interval:
         return
-    await db.set_setting("daily_reminder_sent", today)
     pending: dict[int, list[Test]] = {}
     for t in await db.published_tests():
-        if t.deadline_at:
+        if t.deadline_at or now - t.published_at < interval:
             continue
         for u in await db.non_submitters(t, only_before_publish=False):
             pending.setdefault(u.id, []).append(t)
+    if not pending:
+        return
+    await db.set_setting("open_reminder_at", to_db(now))
+    ctx = ctx or _ReminderContext(db)
     for uid, tests in pending.items():
-        lines = [f"⏰ <b>Eslatma:</b> topshirilmagan testlaringiz — {len(tests)} ta", ""]
-        lines += [f"• «{escape(t.title)}» — {t.n} ta savol, kod <code>{t.id}</code>" for t in tests[:15]]
-        lines += ["", f"Tez yuborish: <code>kod*abcd...</code>. Topshirmaslik: −{cfg.penalty_not_submitted} {COIN}"]
-        await safe_send(bot, uid, "\n".join(lines), kb.pending_tests_kb(tests[:15]))
+        await safe_send(bot, uid, await open_reminder_text(ctx, cfg, uid, tests), kb.pending_tests_kb(tests[:15]))
 
 
 # ---------------- kalitni tuzatish ----------------

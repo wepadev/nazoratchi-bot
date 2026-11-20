@@ -20,7 +20,6 @@ class Config:
     penalty_missed_lesson: int = 5            # jonli darsni qoldirgani uchun
     weekly_rating_weekday: int = 0            # 0 = dushanba
     weekly_rating_hour: int = 9
-    daily_reminder_hour: int = 19             # muddatsiz testlar uchun kunlik eslatma soati
     web_port: int = 8080                      # Mini App serveri porti
     webapp_url: str = ""                       # Mini App'ning ochiq HTTPS manzili
 
@@ -52,7 +51,6 @@ def load_config() -> Config:
         coins_per_lesson=int(os.getenv("COINS_PER_LESSON", "5")),
         penalty_missed_lesson=int(os.getenv("PENALTY_MISSED_LESSON", "5")),
         weekly_rating_hour=int(os.getenv("WEEKLY_RATING_HOUR", "9")),
-        daily_reminder_hour=int(os.getenv("DAILY_REMINDER_HOUR", "19")),
         web_port=int(os.getenv("PORT", "8080")),
         webapp_url=os.getenv("WEBAPP_URL", "").strip().rstrip("/"),
     )
