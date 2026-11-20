@@ -218,3 +218,33 @@ def test_coins():
         await db.close()
 
     asyncio.run(scenario())
+
+
+def test_code_inside_other_action():
+    """«Javob yuborish» yoki «Guruhga qo'shilish» bosilgan holatda ham 4 xonali kod davomat sifatida qabul qilinadi."""
+    async def scenario():
+        db, cfg, session, bot, g = await setup()
+        dp = build_dispatcher(db, cfg)
+        now = utcnow()
+        await db.create_lesson(g.id, "Hosila", "4821", ADMIN, now, now + timedelta(hours=1))
+        t = await db.create_test(g.id, "Test", "ABCD", None, None, ADMIN)
+        await services.publish(bot, db, cfg, t, None, now)
+
+        async def say(uid, text):
+            session.sent.clear()
+            await dp.feed_update(bot, msg_update(uid, text))
+            return [out_text(m) for m in session.sent if m.chat_id == uid]
+
+        await dp.feed_update(bot, cb_update(U1, kb.TestCb(action="answer", test_id=t.id)))
+        assert "qayd etildi" in (await say(U1, "4821"))[0]
+        # davomatdan keyin holat tozalangan: oddiy javob yozish jarayoni qayta ishlaydi
+        await dp.feed_update(bot, cb_update(U1, kb.TestCb(action="answer", test_id=t.id)))
+        assert "tekshiring" in (await say(U1, "abcd"))[0]
+
+        # noto'g'ri 4 xonali raqam — odatdagi javob xatosi (holat saqlanadi)
+        await dp.feed_update(bot, cb_update(U2, kb.TestCb(action="answer", test_id=t.id)))
+        assert "❌" in (await say(U2, "9999"))[0]
+        assert "tekshiring" in (await say(U2, "abca"))[0]
+        await db.close()
+
+    asyncio.run(scenario())

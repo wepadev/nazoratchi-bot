@@ -3,6 +3,7 @@ import re
 from html import escape
 
 from aiogram import Bot, F, Router
+from aiogram.dispatcher.event.bases import SkipHandler
 from aiogram.filters import StateFilter
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
@@ -41,6 +42,18 @@ class Attend(StatesGroup):
 
 
 # ---------------- guruhga qo'shilish ----------------
+
+# Jonli dars kodi boshqa amal o'rtasida yuborilsa ham qabul qilinadi (masalan, «Javob yuborish» bosilgan holatda).
+# Kod hech qaysi ochiq darsga mos kelmasa, xabar odatdagi handlerga o'tadi.
+@router.message(StateFilter(Join.code, Answer.text), F.text.regexp(r"^\s*\d{4}\s*$"))
+async def attend_in_state(message: Message, state: FSMContext, db: Database, config: Config, user: User,
+                          is_admin: bool, is_super: bool):
+    status, lessons = await services.attend(db, user, message.text.strip(), utcnow(), config)
+    if status not in ("ok", "already"):
+        raise SkipHandler()
+    await state.clear()
+    await message.answer(services.attend_reply(status, lessons, config), reply_markup=menu(is_admin, is_super))
+
 
 @router.message(F.text == T.BTN_JOIN)
 async def join_start(message: Message, state: FSMContext, db: Database, user: User):
