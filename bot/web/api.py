@@ -108,7 +108,8 @@ async def home(request: web.Request) -> web.Response:
     recent.sort(key=lambda x: x["closed_at"] or "", reverse=True)
     cfg = request.app[K_CFG]
     return web.json_response({"groups": groups, "active": active, "recent": recent[:15],
-                              "rules": {"per_correct": cfg.coins_per_correct, "penalty": cfg.penalty_not_submitted}})
+                              "rules": {"per_correct": cfg.coins_per_correct, "penalty": cfg.penalty_not_submitted,
+                                        "per_lesson": cfg.coins_per_lesson, "missed_lesson": cfg.penalty_missed_lesson}})
 
 
 async def get_test(request: web.Request) -> web.Response:
@@ -180,8 +181,9 @@ async def attend(request: web.Request) -> web.Response:
     code = str((await body_json(request)).get("code", "")).strip()
     if not services.valid_lesson_code(code):
         return err(400, "bad_code", "Kod aynan 4 ta raqamdan iborat bo'lishi kerak.")
-    status, lessons = await services.attend(request.app[K_DB], request[R_USER], code, utcnow())
-    text = re.sub(r"<[^>]+>", "", services.attend_reply(status, lessons))
+    cfg = request.app[K_CFG]
+    status, lessons = await services.attend(request.app[K_DB], request[R_USER], code, utcnow(), cfg)
+    text = re.sub(r"<[^>]+>", "", services.attend_reply(status, lessons, cfg))
     if status in ("wrong", "blocked"):
         return err(429 if status == "blocked" else 404, status, text)
     return web.json_response({"status": status, "message": text})

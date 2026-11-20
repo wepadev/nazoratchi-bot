@@ -82,6 +82,7 @@ CREATE TABLE IF NOT EXISTS coins (
     user_id     INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
     group_id    INTEGER NOT NULL REFERENCES groups(id) ON DELETE CASCADE,
     test_id     INTEGER REFERENCES tests(id) ON DELETE SET NULL,
+    lesson_id   INTEGER REFERENCES lessons(id) ON DELETE SET NULL,
     amount      INTEGER NOT NULL,
     reason      TEXT    NOT NULL,
     created_by  INTEGER,
@@ -256,7 +257,16 @@ class Database:
         self._conn.row_factory = aiosqlite.Row
         await self._conn.execute("PRAGMA foreign_keys = ON")
         await self._conn.executescript(SCHEMA)
+        await self._migrate()
         await self._conn.commit()
+
+    async def _migrate(self) -> None:
+        """Eski bazalarga yangi ustunlarni qo'shadi (ma'lumot o'chmaydi)."""
+        cur = await self._conn.execute("PRAGMA table_info(coins)")
+        cols = {r["name"] for r in await cur.fetchall()}
+        if "lesson_id" not in cols:
+            await self._conn.execute(
+                "ALTER TABLE coins ADD COLUMN lesson_id INTEGER REFERENCES lessons(id) ON DELETE SET NULL")
 
     async def close(self) -> None:
         if self._conn:
@@ -551,10 +561,17 @@ class Database:
 
     # ================= coins =================
     async def add_coins(self, user_id: int, group_id: int, amount: int, reason: str, now: datetime,
-                        test_id: int | None = None, created_by: int | None = None) -> None:
+                        test_id: int | None = None, created_by: int | None = None,
+                        lesson_id: int | None = None) -> None:
         await self._exec(
-            "INSERT INTO coins (user_id, group_id, test_id, amount, reason, created_by, created_at) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?)", (user_id, group_id, test_id, amount, reason, created_by, to_db(now)))
+            "INSERT INTO coins (user_id, group_id, test_id, lesson_id, amount, reason, created_by, created_at) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+            (user_id, group_id, test_id, lesson_id, amount, reason, created_by, to_db(now)))
+
+    async def lesson_coins(self, lesson_id: int, user_id: int) -> int:
+        row = await self._one("SELECT COALESCE(SUM(amount), 0) AS s FROM coins WHERE lesson_id = ? AND user_id = ?",
+                              (lesson_id, user_id))
+        return row["s"]
 
     async def rating(self, group_id: int, since: datetime | None = None,
                      until: datetime | None = None) -> list[tuple[User, int]]:
@@ -696,6 +713,8 @@ class Database:
         return cur.rowcount > 0
 
     async def delete_lesson(self, lesson_id: int) -> None:
+        """Dars, uning davomati va shu dars uchun berilgan tangalar o'chadi."""
+        await self._exec("DELETE FROM coins WHERE lesson_id = ?", (lesson_id,))
         await self._exec("DELETE FROM lessons WHERE id = ?", (lesson_id,))
 
     async def mark_attendance(self, lesson_id: int, user_id: int, now: datetime,

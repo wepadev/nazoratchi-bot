@@ -173,3 +173,48 @@ def test_api():
         await db.close()
 
     asyncio.run(scenario())
+
+
+def test_coins():
+    async def scenario():
+        db, cfg, session, bot, g = await setup()
+        now = utcnow()
+
+        def coins():
+            async def get():
+                return {u.id: c for u, c in await db.rating(g.id)}
+            return get()
+
+        lesson = await db.create_lesson(g.id, "Hosila", "7777", ADMIN, now, now + timedelta(hours=1))
+        status, _ = await services.attend(db, await db.get_user(U1), "7777", now, cfg)
+        assert status == "ok"
+        assert "(+1" in services.attend_reply(status, [lesson], cfg)
+        assert (await coins()) == {U1: 1, U2: 0, U3: 0}
+        await services.attend(db, await db.get_user(U1), "7777", now, cfg)  # qayta kiritish tanga bermaydi
+        assert (await coins())[U1] == 1
+
+        # kod yopildi: qoldirganlarga −5 va xabar; ikkinchi marta yopish hech narsa o'zgartirmaydi
+        session.sent.clear()
+        later = now + timedelta(hours=2)
+        await scheduler.tick(bot, db, cfg, later)
+        assert (await coins()) == {U1: 1, U2: -5, U3: -5}
+        assert {m.chat_id for m in session.sent if "qatnashmadingiz" in out_text(m)} == {U2, U3}
+        await services.close_lesson(bot, db, cfg, lesson, later)
+        lesson = await db.get_lesson(lesson.id)
+        for uid in (U1, U2, U3):
+            await services.sync_lesson_coins(db, cfg, lesson, uid, later)
+        assert (await coins()) == {U1: 1, U2: -5, U3: -5}
+
+        # nazoratchi yopilgandan keyin qo'lda belgilaydi / belgini oladi
+        await db.mark_attendance(lesson.id, U2, later, marked_by=ADMIN)
+        assert await services.sync_lesson_coins(db, cfg, lesson, U2, later, ADMIN) == 6
+        await db.unmark_attendance(lesson.id, U1)
+        assert await services.sync_lesson_coins(db, cfg, lesson, U1, later, ADMIN) == -6
+        assert (await coins()) == {U1: -5, U2: 1, U3: -5}
+
+        # dars o'chirilsa, uning tangalari ham o'chadi
+        await db.delete_lesson(lesson.id)
+        assert (await coins()) == {U1: 0, U2: 0, U3: 0}
+        await db.close()
+
+    asyncio.run(scenario())

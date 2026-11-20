@@ -172,7 +172,8 @@
       <div class="section"><div class="label">Faol testlar</div>${active}</div>
       ${g ? `<div class="section"><button class="btn ghost block" data-go="/rating/${g.id}">🏆 Reytingni ko'rish</button></div>` : ""}
       <div class="section"><div class="label">Natijalarim</div>${recent}</div>
-      <p class="note">Har bir to'g'ri javob: +${HOME.rules.per_correct} tanga · Topshirmaslik: −${HOME.rules.penalty} tanga</p>`);
+      <p class="note">To'g'ri javob: +${HOME.rules.per_correct} · Testni topshirmaslik: −${HOME.rules.penalty}<br>
+        Jonli darsda qatnashish: +${HOME.rules.per_lesson} · Darsni qoldirish: −${HOME.rules.missed_lesson} (tanga)</p>`);
 
     $app.querySelectorAll("[data-g]").forEach((b) => b.onclick = () => { store.set("group", +b.dataset.g); haptic(); ustozHome(); });
     const asend = document.getElementById("asend");

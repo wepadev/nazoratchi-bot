@@ -45,10 +45,13 @@ bot avtomatik tekshiradi, tanga beradi va reyting tuzadi.
 - Excel: «📥 Davomat Excel» — nazoratchining barcha guruhlari bitta faylda (Umumiy, Darslar, har guruh uchun ustoz × sana).
   Guruh hisobotida ham «Davomat» varag'i bor.
 - Darsdan keyin guruhga qo'shilganlar o'sha dars uchun qatnashmagan hisoblanmaydi.
+- Tanga: qatnashgan **+1** (kod kiritilishi bilan), qoldirgan **−5** (kod yopilganda, ustozga xabar boradi).
+  Nazoratchi qo'lda belgilasa yoki belgini olsa, farq avtomatik to'g'rilanadi; dars o'chirilsa, uning tangalari ham o'chadi.
+  `COINS_PER_LESSON`, `PENALTY_MISSED_LESSON` bilan o'zgartiriladi.
 
 ## Tanga va reyting
 
-- Har bir to'g'ri javob: **+1**, topshirmaslik: **−5** (`.env` da o'zgartiriladi).
+- Har bir to'g'ri javob: **+1**, topshirmaslik: **−5**; jonli dars: qatnashish **+1**, qoldirish **−5** (`.env` da o'zgartiriladi).
 - Har bir tanga sababi bilan yoziladi (Excel'dagi «Tangalar tarixi»).
 - Reyting **har bir guruh uchun alohida**: umumiy / shu hafta / o'tgan hafta. Teng tangalilar bir o'rinda.
 - Ustoz o'z o'rnini va TOP-10 ga qancha tanga qolganini ko'radi.

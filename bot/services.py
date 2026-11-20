@@ -425,7 +425,28 @@ def lesson_label(lesson: Lesson) -> str:
     return f"«{escape(lesson.title)}» · {local(lesson.created_at):%d.%m.%Y}"
 
 
-async def attend(db: Database, user: User, code: str, now: datetime) -> tuple[str, list[Lesson]]:
+async def sync_lesson_coins(db: Database, cfg: Config, lesson: Lesson, user_id: int, now: datetime,
+                            admin_id: int | None = None) -> int:
+    """Shu dars bo'yicha ustozning tangasini qoidaga moslaydi va farqini qaytaradi.
+    Qatnashdi: +coins_per_lesson; dars yopilgan va qatnashmadi: −penalty_missed_lesson; dars ochiq va hali yo'q: 0.
+    Qayta chaqirilsa ham tanga ikki marta yozilmaydi (ledger bo'yicha farq hisoblanadi)."""
+    present = user_id in await db.lesson_present_ids(lesson.id)
+    if present:
+        target, what = cfg.coins_per_lesson, "qatnashdi"
+    elif not lesson.is_open(now):
+        target, what = -cfg.penalty_missed_lesson, "qatnashmadi"
+    else:
+        target, what = 0, "belgi olib tashlandi"
+    diff = target - await db.lesson_coins(lesson.id, user_id)
+    if diff:
+        await db.add_coins(user_id, lesson.group_id, diff,
+                           f"Jonli dars «{lesson.title}» {local(lesson.created_at):%d.%m}: {what}", now,
+                           lesson_id=lesson.id, created_by=admin_id)
+    return diff
+
+
+async def attend(db: Database, user: User, code: str, now: datetime,
+                 cfg: Config | None = None) -> tuple[str, list[Lesson]]:
     """'ok' | 'already' | 'wrong' | 'blocked'. Xato kodlar sanaladi — taxmin qilib topishning oldini olish uchun."""
     clock = time.monotonic()
     tries = [t for t in _wrong_codes.get(user.id, []) if clock - t < WRONG_WINDOW]
@@ -437,6 +458,9 @@ async def attend(db: Database, user: User, code: str, now: datetime) -> tuple[st
         _wrong_codes[user.id] = tries + [clock]
         return "wrong", []
     marked = [lesson for lesson in lessons if await db.mark_attendance(lesson.id, user.id, now)]
+    if cfg:
+        for lesson in marked:
+            await sync_lesson_coins(db, cfg, lesson, user.id, now)
     return ("ok" if marked else "already"), lessons
 
 
@@ -446,13 +470,14 @@ ATTEND_REPLIES = {
 }
 
 
-def attend_reply(status: str, lessons: list[Lesson]) -> str:
+def attend_reply(status: str, lessons: list[Lesson], cfg: Config | None = None) -> str:
     if status in ATTEND_REPLIES:
         return ATTEND_REPLIES[status]
     names = ", ".join(lesson_label(lesson) for lesson in lessons)
     if status == "already":
         return f"Siz bu darsda allaqachon qatnashgan deb belgilangansiz: {names}"
-    return f"✅ Davomat qayd etildi: {names}"
+    bonus = f" (+{cfg.coins_per_lesson * len(lessons)} {COIN})" if cfg and cfg.coins_per_lesson else ""
+    return f"✅ Davomat qayd etildi: {names}{bonus}"
 
 
 async def lesson_summary(db: Database, lesson: Lesson, now: datetime) -> str:
@@ -472,6 +497,13 @@ async def close_lesson(bot: Bot, db: Database, cfg: Config, lesson: Lesson, now:
         return False
     lesson = await db.get_lesson(lesson.id)
     g = await db.get_group(lesson.group_id)
+    # qoldirganlarga jarima (qatnashganlar tangasini kod kiritganda olgan)
+    for u, present in await db.lesson_roster(lesson):
+        if present:
+            continue
+        if await sync_lesson_coins(db, cfg, lesson, u.id, now) and cfg.penalty_missed_lesson:
+            await safe_send(bot, u.id, f"❌ {lesson_label(lesson)} jonli darsida qatnashmadingiz: "
+                                       f"−{cfg.penalty_missed_lesson} {COIN}")
     await notify_admins(bot, db, cfg, lesson.group_id,
                         f"🏁 Jonli dars yakunlandi ({escape(g.name)})\n\n" + await lesson_summary(db, lesson, now))
     return True

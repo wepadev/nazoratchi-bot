@@ -545,11 +545,19 @@ async def mark_lesson(request: web.Request) -> web.Response:
     uid = int(data.get("user_id") or 0)
     if not await db.is_member(lesson.group_id, uid):
         return err(404, "not_found", "Ustoz topilmadi.")
+    now, admin = utcnow(), request[R_USER]
     if data.get("present"):
-        await db.mark_attendance(lesson.id, uid, utcnow(), marked_by=request[R_USER].id)
+        await db.mark_attendance(lesson.id, uid, now, marked_by=admin.id)
     else:
         await db.unmark_attendance(lesson.id, uid)
-    return web.json_response({"ok": True})
+    diff = await services.sync_lesson_coins(db, request.app[K_CFG], lesson, uid, now, admin_id=admin.id)
+    if diff:
+        what = "qatnashgan" if data.get("present") else "qatnashmagan"
+        sign = "+" if diff > 0 else "−"
+        await services.safe_send(request.app[K_BOT], uid,
+                                 f"✏️ Nazoratchi sizni {services.lesson_label(lesson)} jonli darsida {what} deb "
+                                 f"belgiladi: {sign}{abs(diff)} 🪙")
+    return web.json_response({"ok": True, "coins": diff})
 
 
 @admin_only
