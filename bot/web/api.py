@@ -107,7 +107,9 @@ async def home(request: web.Request) -> web.Response:
             recent.append(test_brief(t) | {"group": g.name, "correct": sub.correct if sub else None})
     recent.sort(key=lambda x: x["closed_at"] or "", reverse=True)
     cfg = request.app[K_CFG]
-    return web.json_response({"groups": groups, "active": active, "recent": recent[:15],
+    recordings = [{"id": l.id, "title": l.title, "date": iso(l.created_at), "url": l.video_url}
+                  for l in await db.user_recordings(u.id, limit=30)]
+    return web.json_response({"groups": groups, "active": active, "recent": recent[:15], "recordings": recordings,
                               "rules": {"per_correct": cfg.coins_per_correct, "penalty": cfg.penalty_not_submitted,
                                         "per_lesson": cfg.coins_per_lesson, "missed_lesson": cfg.penalty_missed_lesson}})
 
@@ -126,6 +128,9 @@ async def get_test(request: web.Request) -> web.Response:
     data = test_brief(t) | {"group": g.name, "now": iso(utcnow()), "submission": None, "key": None}
     if sub:
         data["submission"] = {"answers": sub.answers, "correct": sub.correct, "submitted_at": iso(sub.submitted_at)}
+    if sub and t.status == "published" and not t.deadline_at:
+        # muddatsiz test: qaysi savollar xato — darhol (to'g'ri javobsiz)
+        data["wrong"] = [num for num, _, _ in mistakes(sub.answers, t.answer_key)]
     if t.status == "closed":  # kalit faqat yakunlangandan keyin ochiladi
         data["key"] = t.answer_key
         if sub:
@@ -138,7 +143,8 @@ async def submit_test(request: web.Request) -> web.Response:
     u: User = request[R_USER]
     t = await db.get_test(int(request.match_info["test_id"]))
     now = utcnow()
-    if not t or t.status != "published" or t.deadline_at <= now or not await db.is_member(t.group_id, u.id):
+    expired = t is not None and t.deadline_at is not None and t.deadline_at <= now
+    if not t or t.status != "published" or expired or not await db.is_member(t.group_id, u.id):
         return err(409, "not_active", "Bu test faol emas yoki muddati tugagan.")
     if await db.get_submission(t.id, u.id):
         return err(409, "already", "Siz bu testni allaqachon topshirgansiz.")
@@ -153,10 +159,11 @@ async def submit_test(request: web.Request) -> web.Response:
     if correct is None:
         return err(409, "not_active", "Javob qabul qilinmadi: muddat tugagan yoki oldin topshirilgan.")
     coins = correct * cfg.coins_per_correct
+    wrong = [num for num, _, _ in mistakes(answers, t.answer_key)] if not t.deadline_at else None
     await services.safe_send(bot, u.id,
                              f"✅ «{escape(t.title)}» javoblaringiz ilova orqali qabul qilindi.\n"
                              f"Natija: <b>{correct}/{t.n}</b> (+{coins} 🪙)")
-    return web.json_response({"correct": correct, "n": t.n, "coins": coins})
+    return web.json_response({"correct": correct, "n": t.n, "coins": coins, "wrong": wrong})
 
 
 async def rating(request: web.Request) -> web.Response:
@@ -213,11 +220,9 @@ async def admin_groups(request: web.Request) -> web.Response:
     groups = await db.list_groups(None if request[R_SUPER] else request[R_USER].id)
     out = []
     for g in groups:
-        a = await db.active_test(g.id)
-        active = None
-        if a:
-            active = test_brief(a) | {"submitted": len(await db.list_submissions(a.id))}
-        out.append({"id": g.id, "name": g.name, "code": g.code, "members": g.member_count, "active": active})
+        actives = [test_brief(a) | {"submitted": len(await db.list_submissions(a.id))}
+                   for a in await db.active_tests(g.id)]
+        out.append({"id": g.id, "name": g.name, "code": g.code, "members": g.member_count, "actives": actives})
     open_appeals = len(await db.open_appeals(None if request[R_SUPER] else request[R_USER].id))
     return web.json_response({"groups": out, "appeals_open": open_appeals})
 
@@ -261,7 +266,7 @@ async def admin_test(request: web.Request) -> web.Response:
     active = await db.active_test(t.group_id)
     return web.json_response(test_brief(t) | {
         "queue_hours": t.queue_hours, "has_file": bool(t.file_id),
-        "active_other": active.title if active and active.id != t.id else None,
+        "active_other": None,
         "group_id": t.group_id, "key": t.answer_key, "members": len(members), "submitted": len(subs),
         "avg": avg, "questions": questions, "results": results, "missing": missing})
 

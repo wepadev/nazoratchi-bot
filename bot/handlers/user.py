@@ -11,7 +11,7 @@ from aiogram.types import CallbackQuery, Message
 from .. import keyboards as kb
 from .. import services
 from .. import texts as T
-from ..answers import AnswerError, looks_like_answers, parse_answers, preview, split_quick
+from ..answers import AnswerError, looks_like_answers, mistakes, parse_answers, preview, split_quick
 from ..config import Config
 from ..db import Database, Test, User
 from ..timeutil import fmt, fmt_left, utcnow
@@ -118,7 +118,7 @@ async def my_tests(message: Message, db: Database, user: User):
     now = utcnow()
     for t in tests:
         sub = await db.get_submission(t.id, user.id)
-        head = f"📝 <b>{escape(t.title)}</b> — {t.n} ta savol\nMuddat: {fmt(t.deadline_at)} ({fmt_left(t.deadline_at - now)} qoldi)"
+        head = f"📝 <b>{escape(t.title)}</b> — {t.n} ta savol\n{services.deadline_line(t, now)}"
         if sub:
             await message.answer(f"{head}\n\n✅ Topshirilgan: <b>{sub.correct}/{t.n}</b>")
         else:
@@ -127,7 +127,8 @@ async def my_tests(message: Message, db: Database, user: User):
 
 async def _open_test_for(db: Database, test_id: int, user: User) -> tuple[Test | None, str | None]:
     t = await db.get_test(test_id)
-    if not t or t.status != "published" or t.deadline_at <= utcnow() or not await db.is_member(t.group_id, user.id):
+    expired = t is not None and t.deadline_at is not None and t.deadline_at <= utcnow()
+    if not t or t.status != "published" or expired or not await db.is_member(t.group_id, user.id):
         return None, T.TEST_NOT_ACTIVE
     sub = await db.get_submission(t.id, user.id)
     if sub:
@@ -144,8 +145,8 @@ async def answer_start(call: CallbackQuery, callback_data: kb.TestCb, state: FSM
     await state.update_data(test_id=t.id)
     await call.answer()
     await call.message.answer(
-        T.ASK_ANSWERS.format(title=escape(t.title), n=t.n, deadline=fmt(t.deadline_at),
-                             left=fmt_left(t.deadline_at - utcnow()), code=t.id),
+        T.ASK_ANSWERS.format(title=escape(t.title), n=t.n, deadline_line=services.deadline_line(t, utcnow()),
+                             code=t.id),
         reply_markup=kb.cancel_kb())
 
 
@@ -192,9 +193,14 @@ async def answer_confirm(call: CallbackQuery, callback_data: kb.TestCb, state: F
     await call.message.edit_reply_markup(reply_markup=None)
     if correct is None:
         return await call.message.answer(T.TEST_NOT_ACTIVE, reply_markup=menu(is_admin, is_super))
-    await call.message.answer(
-        T.SUBMITTED.format(correct=correct, n=t.n, coins=correct * config.coins_per_correct),
-        reply_markup=menu(is_admin, is_super))
+    coins = correct * config.coins_per_correct
+    if t.deadline_at:
+        text = T.SUBMITTED.format(correct=correct, n=t.n, coins=coins)
+    else:  # muddatsiz test: xato savollar raqami darhol, to'g'ri javoblar yakunlanganda
+        wrong = [str(num) for num, _, _ in mistakes(data["answers"], t.answer_key)]
+        wrong_line = (f"Xato qilgan savollaringiz: <b>{', '.join(wrong)}</b>" if wrong else "🎉 Barcha javoblar to'g'ri!")
+        text = T.SUBMITTED_OPEN.format(correct=correct, n=t.n, coins=coins, wrong=wrong_line)
+    await call.message.answer(text, reply_markup=menu(is_admin, is_super))
 
 
 # ---------------- e'tiroz ----------------
@@ -309,6 +315,17 @@ async def attend_code(message: Message, state: FSMContext, db: Database, config:
 async def attend_quick(message: Message, db: Database, config: Config, user: User):
     status, lessons = await services.attend(db, user, message.text.strip(), utcnow(), config)
     await message.answer(services.attend_reply(status, lessons, config))
+
+
+# ---------------- dars yozuvlari ----------------
+
+@router.message(F.text == T.BTN_RECORDINGS)
+async def recordings(message: Message, db: Database, user: User):
+    items = await db.user_recordings(user.id, limit=30)
+    if not items:
+        return await message.answer(T.NO_RECORDINGS)
+    await message.answer(f"📺 <b>Jonli dars yozuvlari</b> — {len(items)} ta\n\nKo'rish uchun tugmani bosing:",
+                         reply_markup=kb.recordings_kb(items))
 
 
 # ---------------- tez yuborish: "kod*javoblar" yoki shunchaki "abcd..." ----------------

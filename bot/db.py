@@ -111,7 +111,8 @@ CREATE TABLE IF NOT EXISTS lessons (
     created_by  INTEGER NOT NULL,
     created_at  TEXT    NOT NULL,
     closes_at   TEXT    NOT NULL,                 -- kod shu vaqtgacha ishlaydi
-    closed_at   TEXT                              -- yakuniy hisobot yuborilgan vaqt
+    closed_at   TEXT,                             -- yakuniy hisobot yuborilgan vaqt
+    video_url   TEXT                              -- dars yozuvi (YouTube havolasi)
 );
 CREATE INDEX IF NOT EXISTS idx_lessons_group ON lessons(group_id, created_at);
 
@@ -214,13 +215,14 @@ class Lesson:
     created_at: datetime
     closes_at: datetime
     closed_at: datetime | None
+    video_url: str | None = None
 
     def is_open(self, now: datetime) -> bool:
         return self.closed_at is None and self.closes_at > now
 
 
 _USER_COLS = "u.id, u.phone, u.full_name, u.username, u.role"
-_LESSON_COLS = "l.id, l.group_id, l.title, l.code, l.created_by, l.created_at, l.closes_at, l.closed_at"
+_LESSON_COLS = "l.id, l.group_id, l.title, l.code, l.created_by, l.created_at, l.closes_at, l.closed_at, l.video_url"
 
 
 def _lesson(row) -> Lesson:
@@ -267,6 +269,9 @@ class Database:
         if "lesson_id" not in cols:
             await self._conn.execute(
                 "ALTER TABLE coins ADD COLUMN lesson_id INTEGER REFERENCES lessons(id) ON DELETE SET NULL")
+        cur = await self._conn.execute("PRAGMA table_info(lessons)")
+        if "video_url" not in {r["name"] for r in await cur.fetchall()}:
+            await self._conn.execute("ALTER TABLE lessons ADD COLUMN video_url TEXT")
 
     async def close(self) -> None:
         if self._conn:
@@ -467,14 +472,18 @@ class Database:
         await self._exec("UPDATE tests SET status='draft', queue_hours=NULL, queued_at=NULL "
                          "WHERE id=? AND status='queued'", (test_id,))
 
-    async def publish_test(self, test_id: int, now: datetime, deadline: datetime) -> bool:
+    async def publish_test(self, test_id: int, now: datetime, deadline: datetime | None) -> bool:
+        """deadline=None — muddatsiz test (nazoratchi yakunlamaguncha faol). Bir guruhda bir nechta faol test bo'lishi mumkin."""
         cur = await self._exec(
             """UPDATE tests SET status='published', published_at=?, deadline_at=?, reminded_at=?
-               WHERE id=? AND status IN ('draft','queued')
-                 AND NOT EXISTS (SELECT 1 FROM tests t2 WHERE t2.group_id = tests.group_id
-                                 AND t2.status='published')""",
-            (to_db(now), to_db(deadline), to_db(now), test_id))
+               WHERE id=? AND status IN ('draft','queued')""",
+            (to_db(now), to_db(deadline) if deadline else None, to_db(now), test_id))
         return cur.rowcount > 0
+
+    async def active_tests(self, group_id: int) -> list[Test]:
+        rows = await self._all(f"SELECT {_TEST_COLS} FROM tests WHERE group_id = ? AND status = 'published' "
+                               "ORDER BY published_at", (group_id,))
+        return [_test(r) for r in rows]
 
     async def close_test(self, test_id: int, now: datetime) -> bool:
         cur = await self._exec("UPDATE tests SET status='closed', closed_at=? WHERE id=? AND status='published'",
@@ -511,7 +520,8 @@ class Database:
         rows = await self._all(
             f"""SELECT {', '.join('t.' + c.strip() for c in _TEST_COLS.split(','))}
                 FROM tests t JOIN group_members m ON m.group_id = t.group_id
-                WHERE m.user_id = ? AND t.status = 'published' ORDER BY t.deadline_at""", (user_id,))
+                WHERE m.user_id = ? AND t.status = 'published'
+                ORDER BY t.deadline_at IS NULL, t.deadline_at, t.published_at""", (user_id,))
         return [_test(r) for r in rows]
 
     # ================= submissions =================
@@ -520,7 +530,8 @@ class Database:
         cur = await self._exec(
             """INSERT OR IGNORE INTO submissions (test_id, user_id, answers, correct, submitted_at)
                SELECT ?, ?, ?, ?, ? WHERE EXISTS (
-                   SELECT 1 FROM tests WHERE id = ? AND status = 'published' AND deadline_at > ?)""",
+                   SELECT 1 FROM tests WHERE id = ? AND status = 'published'
+                          AND (deadline_at IS NULL OR deadline_at > ?))""",
             (test_id, user_id, answers, correct, to_db(now), test_id, to_db(now)))
         return cur.rowcount > 0
 
@@ -674,10 +685,11 @@ class Database:
 
     # ================= jonli darslar =================
     async def create_lesson(self, group_id: int, title: str, code: str, created_by: int, now: datetime,
-                            closes_at: datetime) -> Lesson:
+                            closes_at: datetime, video_url: str | None = None) -> Lesson:
         cur = await self._exec(
-            "INSERT INTO lessons (group_id, title, code, created_by, created_at, closes_at) VALUES (?, ?, ?, ?, ?, ?)",
-            (group_id, title, code, created_by, to_db(now), to_db(closes_at)))
+            "INSERT INTO lessons (group_id, title, code, created_by, created_at, closes_at, video_url) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?)",
+            (group_id, title, code, created_by, to_db(now), to_db(closes_at), video_url))
         lesson = await self.get_lesson(cur.lastrowid)
         assert lesson
         return lesson
@@ -715,6 +727,17 @@ class Database:
             "UPDATE lessons SET closed_at = ?, closes_at = MIN(closes_at, ?) WHERE id = ? AND closed_at IS NULL",
             (to_db(now), to_db(now), lesson_id))
         return cur.rowcount > 0
+
+    async def set_lesson_video(self, lesson_id: int, url: str | None) -> None:
+        await self._exec("UPDATE lessons SET video_url = ? WHERE id = ?", (url, lesson_id))
+
+    async def user_recordings(self, user_id: int, limit: int = 50) -> list[Lesson]:
+        """Ustoz guruhlaridagi, yozuvi qo'shilgan jonli darslar (yangisi birinchi)."""
+        rows = await self._all(
+            f"""SELECT {_LESSON_COLS} FROM lessons l JOIN group_members m ON m.group_id = l.group_id
+                WHERE m.user_id = ? AND l.video_url IS NOT NULL ORDER BY l.created_at DESC LIMIT ?""",
+            (user_id, limit))
+        return [_lesson(r) for r in rows]
 
     async def delete_lesson(self, lesson_id: int) -> None:
         """Dars, uning davomati va shu dars uchun berilgan tangalar o'chadi."""

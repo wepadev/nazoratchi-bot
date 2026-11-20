@@ -96,7 +96,7 @@ def test_full_flow():
         db = Database(":memory:")
         await db.connect()
         cfg = Config(bot_token="1:x", super_admin_ids=frozenset({SUPER}), db_path=":memory:",
-                     quiet_hours=(0, 0))
+                     quiet_hours=(0, 0), daily_reminder_hour=24)
         session = FakeSession()
         bot = Bot("123:abc", session=session)
         dp = build_dispatcher(db, cfg)
@@ -167,13 +167,15 @@ def test_full_flow():
         await say(ADMIN, "aaaa")
         t2 = next(t for t in await db.list_tests(gid) if t.title == "2-hafta")
 
-        # --- nashr: birinchisi darhol, ikkinchisi navbatga ---
+        # --- nashr: birinchisi 1 kunlik, ikkinchisi muddatsiz — ikkalasi bir vaqtda faol ---
         out = await click(ADMIN, kb.TestCb(action="pub", test_id=t1.id, arg=24))
         for uid in (U1, U2, U3):
             assert any("Yangi test" in t for t in to(out, uid))
         assert (await db.get_test(t1.id)).status == "published"
-        await click(ADMIN, kb.TestCb(action="pub", test_id=t2.id, arg=48))
-        assert (await db.get_test(t2.id)).status == "queued"
+        out = await click(ADMIN, kb.TestCb(action="pub", test_id=t2.id, arg=0))
+        t2 = await db.get_test(t2.id)
+        assert t2.status == "published" and t2.deadline_at is None
+        assert any("2-hafta" in t and "cheklanmagan" in t for t in to(out, U3))
 
         # --- javoblar ---
         await click(U1, kb.TestCb(action="answer", test_id=t1.id))
@@ -210,9 +212,8 @@ def test_full_flow():
         admin_report = "\n".join(to(sent, ADMIN))
         assert "Topshirmaganlar (1)" in admin_report and "Soliyev Soli" in admin_report
         assert "№5" in admin_report  # eng ko'p xato qilingan savol
-        # navbatdagi test avtomatik nashr qilindi
+        # muddatsiz test yopilmaydi
         assert (await db.get_test(t2.id)).status == "published"
-        assert any("2-hafta" in t for t in to(sent, U3))
 
         rating = {u.id: c for u, c in await db.rating(gid)}
         assert rating == {U1: 4, U2: 2, U3: -5}

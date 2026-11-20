@@ -42,13 +42,13 @@ async def access(db: Database, group_id: int, user: User, is_super: bool) -> Gro
 
 async def card_text(db: Database, g: Group) -> str:
     admins = await db.group_admins(g.id)
-    active = await db.active_test(g.id)
+    active = await db.active_tests(g.id)
     lines = [f"📁 <b>{escape(g.name)}</b>", "",
              f"Qo'shilish kodi: <code>{g.code}</code>",
              f"Ustozlar: {g.member_count} ta",
              "Nazoratchilar: " + (", ".join(escape(a.full_name) for a in admins) if admins else "— tayinlanmagan")]
     if active:
-        lines.append(f"Faol test: «{escape(active.title)}»")
+        lines.append("Faol testlar: " + ", ".join(f"«{escape(t.title)}»" for t in active))
     return "\n".join(lines)
 
 

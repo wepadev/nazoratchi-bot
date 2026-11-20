@@ -61,6 +61,7 @@
   const hoursLeft = (iso) => (new Date(iso) - Date.now()) / 3600000;
   const coinsHtml = (c) => `<span class="coins ${c < 0 ? "neg" : ""}"><span class="coin"></span>${c}</span>`;
   const deadlineChip = (iso) => {
+    if (!iso) return `<span class="chip brand">♾ muddatsiz</span>`;
     const h = hoursLeft(iso);
     const cls = h <= 3 ? "bad" : h <= 24 ? "accent" : "brand";
     return `<span class="chip ${cls}">⏱ ${left(iso)}</span>`;
@@ -75,6 +76,11 @@
   }
 
   function go(hash) { location.hash = hash; }
+  function openUrl(url) {
+    if (!/^https?:\/\//.test(url)) return;
+    try { if (tg && tg.openLink && tg.initData) return tg.openLink(url); } catch { /* */ }
+    window.open(url, "_blank", "noopener");
+  }
   function clearTimers() { timers.forEach(clearInterval); timers = []; }
   function render(html) { $app.innerHTML = html; window.scrollTo(0, 0); }
   function loading() { render(`<div class="loader"><span></span></div>`); }
@@ -149,7 +155,7 @@
     const active = HOME.active.length ? HOME.active.map((t) => `
       <div class="card tcard">
         <div class="top"><div><div class="title">${esc(t.title)}</div>
-          <div class="meta">${esc(t.group)} · ${t.n} ta savol · ${fmtDate(t.deadline_at)} gacha</div></div>
+          <div class="meta">${esc(t.group)} · ${t.n} ta savol${t.deadline_at ? ` · ${fmtDate(t.deadline_at)} gacha` : ""}</div></div>
           ${t.correct === null ? deadlineChip(t.deadline_at) : `<span class="chip ok">✓ ${t.correct}/${t.n}</span>`}
         </div>
         <div class="actions">${t.correct === null
@@ -172,10 +178,14 @@
       <div class="section"><div class="label">Faol testlar</div>${active}</div>
       ${g ? `<div class="section"><button class="btn ghost block" data-go="/rating/${g.id}">🏆 Reytingni ko'rish</button></div>` : ""}
       <div class="section"><div class="label">Natijalarim</div>${recent}</div>
+      ${HOME.recordings && HOME.recordings.length ? `<div class="section"><div class="label">📺 Dars yozuvlari</div><div class="list">${HOME.recordings.map((v) => `
+        <button class="row" data-video="${esc(v.url)}"><div class="ai-play">▶</div><div class="grow"><div class="t">${esc(v.title)}</div>
+          <div class="s">${fmtDate(v.date).split(" ")[0]} · jonli dars yozuvi</div></div><span class="chev">›</span></button>`).join("")}</div></div>` : ""}
       <p class="note">To'g'ri javob: +${HOME.rules.per_correct} · Testni topshirmaslik: −${HOME.rules.penalty}<br>
         Jonli darsda qatnashish: +${HOME.rules.per_lesson} · Darsni qoldirish: −${HOME.rules.missed_lesson} (tanga)</p>`);
 
     $app.querySelectorAll("[data-g]").forEach((b) => b.onclick = () => { store.set("group", +b.dataset.g); haptic(); ustozHome(); });
+    $app.querySelectorAll("[data-video]").forEach((b) => b.onclick = () => openUrl(b.dataset.video));
     const asend = document.getElementById("asend");
     if (asend) {
       const ainput = document.getElementById("acode");
@@ -188,7 +198,8 @@
   async function testPage(id) {
     const t = await api(`/api/tests/${id}`);
     if (!t.submission && t.status === "published" && ME.role !== "ustoz") return go(`/t/${id}`);
-    if (t.status === "published" && !t.submission && new Date(t.deadline_at) > Date.now()) return answerSheet(t);
+    const live = !t.deadline_at || new Date(t.deadline_at) > Date.now();
+    if (t.status === "published" && !t.submission && live) return answerSheet(t);
     return resultView(t);
   }
 
@@ -219,7 +230,7 @@
         store.set(key, ans.join("")); upd(); haptic();
       });
     });
-    timers.push(setInterval(() => {
+    if (t.deadline_at) timers.push(setInterval(() => {
       const el = document.getElementById("dl"); if (el) el.innerHTML = deadlineChip(t.deadline_at);
       if (new Date(t.deadline_at) <= Date.now()) { clearTimers(); toast("Muddat tugadi"); router(); }
     }, 30000));
@@ -238,7 +249,8 @@
           <div class="h-sub">${esc(t.title)}</div>
           <div class="score-big" style="margin-top:10px">${r.correct}<small>/${r.n}</small></div>
           <div class="coins-earned"><span class="chip accent"><span class="coin"></span>+${r.coins} tanga</span></div>
-          <p class="note">Qaysi savollarda xato qilganingiz va to'g'ri javoblar muddat tugagach ko'rsatiladi.</p>
+          ${r.wrong ? `<p class="note">${r.wrong.length ? `Xato qilgan savollaringiz: <b>${r.wrong.join(", ")}</b>` : "Barcha javoblar to'g'ri! 🎉"}<br>To'g'ri javoblar test yakunlanganda ochiladi.</p>`
+            : `<p class="note">Qaysi savollarda xato qilganingiz va to'g'ri javoblar muddat tugagach ko'rsatiladi.</p>`}
         </div>
         <div class="section"><button class="btn block" data-go="/">Bosh sahifa</button></div>`);
       } catch (e) {
@@ -256,6 +268,7 @@
       head += `<div class="score-big" style="margin-top:10px">${sub.correct}<small>/${t.n}</small></div>
         <div class="progress" style="margin:16px auto 0;max-width:260px"><i style="width:${(100 * sub.correct / t.n).toFixed(1)}%"></i></div>`;
       head += closed ? `<p class="note">${t.mistakes.length ? `${t.mistakes.length} ta xato` : "Barcha javoblar to'g'ri! 🎉"}</p>`
+        : t.wrong ? `<p class="note">${t.wrong.length ? `Xato savollar: <b>${t.wrong.join(", ")}</b>` : "Barcha javoblar to'g'ri! 🎉"}<br>To'g'ri javoblar test yakunlanganda ochiladi.</p>`
         : `<p class="note">Muddat: ${fmtDate(t.deadline_at)}. To'g'ri javoblar shundan keyin ochiladi.</p>`;
     } else {
       head += `<div style="margin-top:14px"><span class="chip bad">Topshirilmagan</span></div>`;
@@ -269,13 +282,14 @@
         const mine = sub ? sub.answers[i] : "-";
         const right = closed ? t.key[i] : null;
         if (onlyWrong && mine === right) return "";
-        const miss = closed && mine !== right;
+        const known = closed || !!t.wrong;  // muddatsiz test: xato savollar ma'lum, kalit yo'q
+        const miss = closed ? mine !== right : !!t.wrong && t.wrong.includes(i + 1);
         return `<div class="q ${miss ? "miss" : ""}"><div class="num">${i + 1}</div><div class="opts">${OPTS.map((o) => {
           let c = "";
           if (closed && o === right) c = mine === o ? "right on" : "right";
-          else if (o === mine) c = closed ? "wrong" : "on";
+          else if (o === mine) c = closed || t.wrong ? (miss ? "wrong" : "right on") : "on";
           return `<span class="b ${c}">${o}</span>`;
-        }).join("")}</div><div class="mark">${closed ? (miss ? "✕" : "✓") : ""}</div></div>`;
+        }).join("")}</div><div class="mark">${known ? (miss ? "✕" : "✓") : ""}</div></div>`;
       }).join("");
       const legend = closed ? `<div class="legend"><span><i style="background:var(--success)"></i>to'g'ri belgilagansiz</span>
         <span><i style="border-color:var(--success);background:var(--success-soft)"></i>to'g'ri javob</span>
@@ -318,7 +332,7 @@
   const post = (path, data) => api(path, { method: "POST", body: JSON.stringify(data || {}) });
   const del = (path) => api(path, { method: "DELETE" });
   const STATUS = { draft: ["muted", "Qoralama"], queued: ["accent", "Navbatda"], published: ["brand", "Faol"], closed: ["ok", "Yakunlangan"] };
-  const DURATIONS = [[12, "12 soat"], [24, "1 kun"], [48, "2 kun"], [72, "3 kun"], [168, "1 hafta"]];
+  const DURATIONS = [[0, "♾ Muddatsiz"], [24, "1 kun"], [48, "2 kun"], [72, "3 kun"], [168, "1 hafta"]];
   const abtn = (icon, label, attrs, extra = "") => `<button class="abtn ${extra}" ${attrs}><span class="ai">${icon}</span>${label}</button>`;
 
   // kalitni matndan o'qish: "abcd", "1a 2b", kirill harflari ham
@@ -354,22 +368,24 @@
     const { groups, appeals_open } = await api("/api/admin/groups");
     const sup = ME.role === "super";
     const list = groups.length ? groups.map((g) => {
-      const a = g.active;
-      const pct = a && g.members ? Math.round(100 * a.submitted / g.members) : 0;
+      const actives = g.actives || [];
+      const bars = actives.map((a) => {
+        const pct = g.members ? Math.round(100 * a.submitted / g.members) : 0;
+        return `<div style="margin-top:14px"><div style="display:flex;justify-content:space-between;gap:8px;font-size:14px;margin-bottom:6px">
+            <b>${esc(a.title)}</b><span class="h-sub" style="white-space:nowrap">${a.submitted}/${g.members} topshirdi</span></div>
+            <div class="progress"><i style="width:${pct}%"></i></div>
+            <div class="meta" style="margin-top:6px">${a.deadline_at ? `Muddat: ${fmtDate(a.deadline_at)} · ${left(a.deadline_at)} qoldi` : "♾ Muddatsiz"}</div></div>`;
+      }).join("");
       return `<button class="card tcard" style="display:block;width:100%;text-align:left" data-go="/g/${g.id}">
         <div class="top"><div><div class="title">${esc(g.name)}</div>
           <div class="meta">${g.members} ta ustoz · kod <span class="code">${esc(g.code)}</span></div></div><span class="chev">›</span></div>
-        ${a ? `<div style="margin-top:14px"><div style="display:flex;justify-content:space-between;gap:8px;font-size:14px;margin-bottom:6px">
-            <b>${esc(a.title)}</b><span class="h-sub" style="white-space:nowrap">${a.submitted}/${g.members} topshirdi</span></div>
-            <div class="progress"><i style="width:${pct}%"></i></div>
-            <div class="meta" style="margin-top:6px">Muddat: ${fmtDate(a.deadline_at)} · ${left(a.deadline_at)} qoldi</div></div>`
-          : `<div class="meta" style="margin-top:10px">Faol test yo'q</div>`}
+        ${bars || `<div class="meta" style="margin-top:10px">Faol test yo'q</div>`}
       </button>`;
     }).join("") : `<div class="card empty">${sup ? "Hali guruh yo'q — «Yangi guruh» ni bosing." : "Sizga hali guruh tayinlanmagan."}</div>`;
     render(`<div class="hero"><div class="hi">${sup ? "Bosh admin" : "Nazoratchi"}</div><div class="name">${esc(ME.name)}</div>
         <div class="hero-stats"><div class="hs"><div class="v">${groups.length}</div><div class="k">guruh</div></div>
         <div class="hs"><div class="v">${groups.reduce((s, g) => s + g.members, 0)}</div><div class="k">ustoz</div></div>
-        <div class="hs"><div class="v">${groups.filter((g) => g.active).length}</div><div class="k">faol test</div></div></div></div>
+        <div class="hs"><div class="v">${groups.reduce((s, g) => s + (g.actives || []).length, 0)}</div><div class="k">faol test</div></div></div></div>
       <div class="section"><div class="agrid">
         ${abtn("📨", "E'tirozlar" + (appeals_open ? `<span class="badge">${appeals_open}</span>` : ""), `data-go="/appeals"`)}
         ${sup ? abtn("➕", "Yangi guruh", `data-go="/newgroup"`) : ""}
@@ -617,22 +633,21 @@
     const live = t.status === "published" || t.status === "closed";
     let sort = store.get("qsort") || "num";
     let selected = null;
-    let hours = 24;
+    let hours = 0;
 
     const publishBlock = () => `<div class="section"><div class="card">
       <div class="title" style="font-weight:700;margin-bottom:10px">🚀 Nashr qilish</div>
-      ${t.active_other ? `<div class="warn" style="margin-bottom:12px">«${esc(t.active_other)}» hozir faol. Bu test <b>navbatga</b> qo'yiladi va u yakunlanishi bilan avtomatik nashr qilinadi.</div>` : ""}
-      <div class="field"><span>Davomiyligi</span><div class="chips">${DURATIONS.map(([h, l]) =>
+      <div class="field"><span>Muddat</span><div class="chips">${DURATIONS.map(([h, l]) =>
         `<button class="pick ${h === hours ? "on" : ""}" data-h="${h}">${l}</button>`).join("")}</div></div>
-      ${t.active_other ? "" : `<label class="field"><span>Yoki aniq muddat (Toshkent vaqti)</span><input class="input" id="dl" type="datetime-local"></label>`}
-      <button class="btn block" id="pub">${t.active_other ? "⏳ Navbatga qo'yish" : "🚀 Nashr qilish"}</button>
-      <p class="note">Nashr qilinganda guruhdagi barcha ustozlarga xabar boradi.</p></div></div>`;
+      <label class="field"><span>Yoki aniq muddat (Toshkent vaqti)</span><input class="input" id="dl" type="datetime-local"></label>
+      <button class="btn block" id="pub">🚀 Nashr qilish</button>
+      <p class="note">Nashr qilinganda guruhdagi barcha ustozlarga xabar boradi. ♾ Muddatsiz test siz yakunlamaguningizcha faol turadi: ustoz xato savollar raqamini darhol ko'radi, to'g'ri javoblar va −5 jarima yakunlanganda.</p></div></div>`;
 
     const draw = () => {
       const [cls, label] = STATUS[t.status];
       const head = `<div class="h-title">${esc(t.title)}</div>
         <div class="h-sub"><span class="chip ${cls}">${label}</span> · ${t.n} ta savol${t.has_file ? " · 📎 fayl bor" : ""}</div>
-        <div class="h-sub" style="margin-top:6px">${t.status === "published" ? `Muddat: ${fmtDate(t.deadline_at)} (${left(t.deadline_at)} qoldi)`
+        <div class="h-sub" style="margin-top:6px">${t.status === "published" ? (t.deadline_at ? `Muddat: ${fmtDate(t.deadline_at)} (${left(t.deadline_at)} qoldi)` : "♾ Muddatsiz · «Hozir yakunlash» bilan yopasiz")
           : t.status === "closed" ? `Yakunlangan: ${fmtDate(t.closed_at)}` : t.status === "queued" ? `Navbatda · davomiyligi ${t.queue_hours} soat` : "Hali nashr qilinmagan"}</div>`;
 
       let actions = "";
@@ -684,7 +699,7 @@
         const dl = document.getElementById("dl");
         const payload = dl && dl.value ? { deadline: `${dl.value}:00+05:00` } : { hours };
         const when = payload.deadline ? `${dl.value.replace("T", " ")} gacha` : DURATIONS.find(([h]) => h === hours)[1];
-        if (!(await confirmBox(t.active_other ? `Navbatga qo'yilsinmi? (${when})` : `Nashr qilinsinmi? Muddat: ${when}. Hamma ustozlarga xabar boradi.`))) return;
+        if (!(await confirmBox(`Nashr qilinsinmi? Muddat: ${when}. Hamma ustozlarga xabar boradi.`))) return;
         try { const r = await post(`/api/admin/tests/${id}/publish`, payload); haptic("ok");
           toast(r.result === "queued" ? "Navbatga qo'yildi ⏳" : "Nashr qilindi 🚀"); reload(); } catch (e) { haptic("err"); toast(e.message); }
       });
@@ -758,7 +773,7 @@
     const list = past.length ? `<div class="list">${past.map((l) => {
       const pct = l.total ? Math.round(100 * l.present / l.total) : 0;
       return `<button class="row" data-go="/lesson/${l.id}"><div class="grow"><div class="t">${dayLabel(l.created_at)} · ${esc(l.title)}</div>
-        <div class="s">kod ${esc(l.code)} · ${l.total - l.present} kishi qatnashmadi</div></div>
+        <div class="s">kod ${esc(l.code)} · ${l.total - l.present} kishi qatnashmadi${l.video_url ? " · 📺 yozuv bor" : ""}</div></div>
         <span class="chip ${pct >= 90 ? "ok" : pct >= 70 ? "muted" : "bad"}">${l.present}/${l.total}</span><span class="chev">›</span></button>`;
     }).join("")}</div>` : `<div class="card empty">Hali yakunlangan dars yo'q.</div>`;
     const missing = d.members.filter((m) => m.missed.length);
@@ -774,6 +789,7 @@
       <div class="section"><div class="card">
         <div class="title" style="font-weight:700;margin-bottom:12px">➕ Yangi jonli dars</div>
         <label class="field"><span>Mavzu (ixtiyoriy)</span><input class="input" id="ltitle" maxlength="80" placeholder="Masalan: Logarifmik tenglamalar"></label>
+        <label class="field"><span>YouTube yozuvi (ixtiyoriy, keyin ham qo'shsa bo'ladi)</span><input class="input" id="lvideo" inputmode="url" placeholder="https://youtu.be/..."></label>
         <div class="field"><span>4 xonali kod</span><div class="stepper">
           <input class="input" id="lcode" inputmode="numeric" maxlength="4" placeholder="4821" style="letter-spacing:4px">
           <button id="rnd" title="Avtomatik">🎲</button></div></div>
@@ -796,7 +812,7 @@
       const code = document.getElementById("lcode").value.replace(/\D/g, "");
       if (code && code.length !== 4) return toast("Kod 4 ta raqamdan iborat bo'lishi kerak");
       try {
-        const r = await post(`/api/admin/groups/${gid}/lessons`, { code, minutes, title: document.getElementById("ltitle").value });
+        const r = await post(`/api/admin/groups/${gid}/lessons`, { code, minutes, title: document.getElementById("ltitle").value, video_url: document.getElementById("lvideo").value });
         haptic("ok"); toast(`Dars ochildi. Kod: ${r.code}`); lessonsPage(gid);
       } catch (e) { haptic("err"); toast(e.message); }
     };
@@ -830,6 +846,11 @@
             <span class="switch ${p.present ? "on" : ""}"></span></button>`).join("")}</div>
           <p class="note">Kodni kirita olmaganlarni qo'lda belgilash uchun tugmani bosing.</p>`
           : `<div class="card empty">${tab === "absent" ? "Hamma qatnashgan 👏" : "Hali hech kim kod kiritmagan."}</div>`}</div>
+        <div class="section"><div class="card"><div class="title" style="font-weight:700;margin-bottom:10px">📺 Dars yozuvi (YouTube)</div>
+          <input class="input" id="vurl" inputmode="url" placeholder="https://youtu.be/..." value="${esc(l.video_url || "")}">
+          <div class="btn-row" style="margin-top:10px"><button class="btn" id="vsave">Saqlash</button>
+            ${l.video_url ? `<button class="btn ghost" id="vopen">▶ Ochish</button>` : ""}</div>
+          <p class="note" style="text-align:left">Yangi havola saqlanganda guruhdagi ustozlarga yuboriladi va «📺 Dars yozuvlari» bo'limida turadi. O'chirish uchun maydonni bo'shatib saqlang.</p></div></div>
         <div class="section"><div class="btn-row">${l.open ? `<button class="btn line" id="lclose">Kodni yopish</button>` : ""}
           <button class="btn ghost" data-go="/lessons/${l.group_id}">Darslar</button></div>
           <button class="btn line block" id="ldel" style="margin-top:10px">O'chirish</button></div>`);
@@ -844,6 +865,14 @@
         if (!(await confirmBox("Kod yopilsinmi?"))) return;
         try { await post(`/api/admin/lessons/${id}/close`); toast("Kod yopildi"); Object.assign(l, await api(`/api/admin/lessons/${id}`)); draw(); } catch (e) { toast(e.message); }
       };
+      document.getElementById("vsave").onclick = async () => {
+        try {
+          const r = await post(`/api/admin/lessons/${id}/video`, { url: document.getElementById("vurl").value });
+          l.video_url = r.video_url; haptic("ok");
+          toast(r.video_url ? (r.sent ? `Saqlandi, ${r.sent} ta ustozga yuborildi` : "Saqlandi") : "Yozuv olib tashlandi"); draw();
+        } catch (e) { haptic("err"); toast(e.message); }
+      };
+      const vo = document.getElementById("vopen"); if (vo) vo.onclick = () => openUrl(l.video_url);
       document.getElementById("ldel").onclick = async () => {
         if (!(await confirmBox("Bu dars va uning davomati o'chirilsinmi?"))) return;
         try { await del(`/api/admin/lessons/${id}`); toast("O'chirildi"); go(`/lessons/${l.group_id}`); } catch (e) { toast(e.message); }

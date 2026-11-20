@@ -26,6 +26,7 @@ router.callback_query.filter(Registered(), IsAdmin())
 class LessonForm(StatesGroup):
     code = State()
     duration = State()
+    video = State()
 
 
 async def lessons_text(db: Database, group_id: int, now) -> str:
@@ -160,3 +161,40 @@ async def excel(call: CallbackQuery, db: Database, user: User, is_super: bool):
     await call.message.answer_document(
         BufferedInputFile(data, filename=f"davomat_{local(now):%Y-%m-%d}.xlsx"),
         caption=f"🎥 Jonli darslar davomati: {len(groups)} ta guruh, barchasi bitta faylda")
+
+
+# ---------- dars yozuvi (YouTube) ----------
+
+@router.callback_query(kb.LessonCb.filter(F.action == "video"))
+async def video_start(call: CallbackQuery, callback_data: kb.LessonCb, state: FSMContext, db: Database,
+                      user: User, is_super: bool):
+    lesson = await lesson_access(db, callback_data.lesson_id, user, is_super)
+    if not lesson:
+        return await deny(call)
+    await state.set_state(LessonForm.video)
+    await state.update_data(lesson_id=lesson.id)
+    await call.answer()
+    await call.message.answer(T.ASK_VIDEO_URL, reply_markup=kb.cancel_kb())
+
+
+@router.message(LessonForm.video, F.text)
+async def video_finish(message: Message, state: FSMContext, db: Database, bot: Bot, user: User,
+                       is_admin: bool, is_super: bool):
+    data = await state.get_data()
+    lesson = await lesson_access(db, data.get("lesson_id", 0), user, is_super)
+    if not lesson:
+        await state.clear()
+        return await message.answer(T.NOT_FOUND, reply_markup=menu(is_admin, is_super))
+    try:
+        url = None if message.text.strip() == "-" else services.clean_video_url(message.text)
+    except ValueError as e:
+        return await message.answer(f"❌ {e}")
+    await state.clear()
+    await db.set_lesson_video(lesson.id, url)
+    lesson = await db.get_lesson(lesson.id)
+    if not url:
+        return await message.answer("📺 Yozuv olib tashlandi.", reply_markup=menu(is_admin, is_super))
+    sent = await services.announce_recording(bot, db, lesson)
+    await message.answer(f"📺 Yozuv saqlandi va {sent} ta ustozga yuborildi.", reply_markup=menu(is_admin, is_super))
+    now = utcnow()
+    await message.answer((await services.lesson_summary(db, lesson, now))[:4000], reply_markup=kb.lesson_kb(lesson, now))

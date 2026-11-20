@@ -29,9 +29,10 @@ def test_groups_tests_coins():
         t1 = await db.create_test(g.id, "T1", "ABCD", None, None, 1)
         t2 = await db.create_test(g.id, "T2", "AAAA", None, None, 1)
         assert await db.publish_test(t1.id, now, now + timedelta(hours=1))
-        assert not await db.publish_test(t2.id, now, now + timedelta(hours=1))  # bir vaqtda bitta faol
-        await db.queue_test(t2.id, 24, now)
-        assert (await db.next_queued(g.id)).id == t2.id
+        assert await db.publish_test(t2.id, now, None)           # bir nechta faol test, muddatsiz ham
+        assert not await db.publish_test(t2.id, now, None)       # qayta nashr qilinmaydi
+        assert [t.id for t in await db.active_tests(g.id)] == [t1.id, t2.id]
+        assert await db.submit(t2.id, 3, "AAAA", 4, now + timedelta(days=30))  # muddatsiz — istalgan vaqt
 
         assert await db.submit(t1.id, 2, "ABCC", 3, now)
         assert not await db.submit(t1.id, 2, "ABCD", 4, now)  # qayta topshirib bo'lmaydi

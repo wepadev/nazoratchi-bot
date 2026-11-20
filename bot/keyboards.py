@@ -91,7 +91,8 @@ def main_menu(is_admin: bool, is_super: bool) -> ReplyKeyboardMarkup:
                     [T.BTN_APPEALS, T.BTN_PROFILE]])
     if is_admin:
         return _kb([[T.BTN_GROUPS, T.BTN_APPEALS], [T.BTN_PROFILE]])
-    return _kb([[T.BTN_TESTS, T.BTN_RATING], [T.BTN_ATTEND, T.BTN_JOIN], [T.BTN_MY_GROUPS, T.BTN_PROFILE]])
+    return _kb([[T.BTN_TESTS, T.BTN_RATING], [T.BTN_ATTEND, T.BTN_RECORDINGS],
+                [T.BTN_JOIN, T.BTN_MY_GROUPS], [T.BTN_PROFILE]])
 
 
 # ---------------- inline klaviaturalar ----------------
@@ -180,15 +181,14 @@ def test_kb(test) -> InlineKeyboardMarkup:
     return _build(items, 2)
 
 
-DURATIONS = [(12, "12 soat"), (24, "1 kun"), (48, "2 kun"), (72, "3 kun"), (168, "1 hafta")]
+DURATIONS = [(0, "♾ Muddatsiz"), (24, "1 kun"), (48, "2 kun"), (72, "3 kun"), (168, "1 hafta")]
 
 
-def publish_kb(test_id: int, queue: bool) -> InlineKeyboardMarkup:
+def publish_kb(test_id: int) -> InlineKeyboardMarkup:
     items = [(label, TestCb(action="pub", test_id=test_id, arg=h)) for h, label in DURATIONS]
-    if not queue:
-        items.append(("📅 Aniq sana", TestCb(action="date", test_id=test_id)))
+    items.append(("📅 Aniq sana", TestCb(action="date", test_id=test_id)))
     items.append((BACK, TestCb(action="open", test_id=test_id)))
-    return _build(items, [3, 2, 1, 1] if not queue else [3, 2, 1])
+    return _build(items, [1, 2, 2, 1, 1])
 
 
 def confirm_kb(yes: tuple[str, CallbackData], no: tuple[str, CallbackData]) -> InlineKeyboardMarkup:
@@ -267,6 +267,22 @@ def lesson_kb(lesson, now) -> InlineKeyboardMarkup:
     items = []
     if lesson.is_open(now):
         items.append(("⏹ Kodni yopish", LessonCb(action="close", lesson_id=lesson.id)))
+    items.append(("📺 Yozuvni almashtirish" if lesson.video_url else "📺 YouTube yozuvini qo'shish",
+                  LessonCb(action="video", lesson_id=lesson.id)))
     items += [("🔄 Yangilash", LessonCb(action="open", lesson_id=lesson.id, arg=1)),
               (BACK, GroupCb(action="lessons", group_id=lesson.group_id))]
     return _build(items)
+
+
+def pending_tests_kb(tests) -> InlineKeyboardMarkup:
+    return _build([(f"✍️ {t.title}", TestCb(action="answer", test_id=t.id)) for t in tests])
+
+
+def video_kb(url: str) -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="▶️ Yozuvni ko'rish", url=url)]])
+
+
+def recordings_kb(lessons) -> InlineKeyboardMarkup:
+    from .timeutil import local
+    rows = [[InlineKeyboardButton(text=f"▶️ {local(l.created_at):%d.%m} · {l.title}", url=l.video_url)] for l in lessons]
+    return InlineKeyboardMarkup(inline_keyboard=rows)

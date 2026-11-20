@@ -75,21 +75,28 @@ async def notify_admins(bot: Bot, db: Database, cfg: Config, group_id: int, text
 
 # ---------------- nashr ----------------
 
+def deadline_line(test: Test, now: datetime) -> str:
+    if not test.deadline_at:
+        return "Muddat: <b>cheklanmagan</b> — o'zingizga qulay vaqtda topshiring"
+    return f"Muddat: <b>{fmt(test.deadline_at)}</b> gacha ({fmt_left(test.deadline_at - now)} qoldi)"
+
+
 def announce_text(test: Test, group: Group, cfg: Config, now: datetime) -> str:
+    penalty_when = "" if test.deadline_at else " (test yakunlanganda)"
     return (
         f"📝 <b>Yangi test: {escape(test.title)}</b>\n\n"
         f"Guruh: {escape(group.name)}\n"
         f"Test kodi: <b>{test.id}</b>\n"
         f"Savollar: {test.n} ta (A/B/C/D)\n"
-        f"Muddat: <b>{fmt(test.deadline_at)}</b> gacha ({fmt_left(test.deadline_at - now)} qoldi)\n\n"
+        f"{deadline_line(test, now)}\n\n"
         f"Har bir to'g'ri javob: +{cfg.coins_per_correct} {COIN}\n"
-        f"Topshirmaslik: −{cfg.penalty_not_submitted} {COIN}\n\n"
+        f"Topshirmaslik: −{cfg.penalty_not_submitted} {COIN}{penalty_when}\n\n"
         f"⚡️ Tez yuborish — botga bitta xabar: <code>{test.id}*abcd...</code>\n"
         "Javoblar <b>faqat bir marta</b> qabul qilinadi."
     )
 
 
-async def publish(bot: Bot, db: Database, cfg: Config, test: Test, deadline: datetime, now: datetime) -> bool:
+async def publish(bot: Bot, db: Database, cfg: Config, test: Test, deadline: datetime | None, now: datetime) -> bool:
     if not await db.publish_test(test.id, now, deadline):
         return False
     test = await db.get_test(test.id)
@@ -101,7 +108,7 @@ async def publish(bot: Bot, db: Database, cfg: Config, test: Test, deadline: dat
     await notify_admins(
         bot, db, cfg, test.group_id,
         f"🚀 «{escape(test.title)}» nashr qilindi ({escape(group.name)}). "
-        f"{sent} ta ustozga yuborildi. Muddat: {fmt(deadline)}.")
+        f"{sent} ta ustozga yuborildi. Muddat: {fmt(deadline) if deadline else 'cheklanmagan'}.")
     return True
 
 
@@ -257,6 +264,29 @@ async def send_reminders(bot: Bot, db: Database, cfg: Config, now: datetime) -> 
         for u in await db.non_submitters(t, only_before_publish=False):
             await safe_send(bot, u.id, text, kb.answer_kb(t.id))
         await db.set_reminded(t.id, now, final=final)
+    await daily_open_reminder(bot, db, cfg, now)
+
+
+async def daily_open_reminder(bot: Bot, db: Database, cfg: Config, now: datetime) -> None:
+    """Muddatsiz testlar: kuniga bir marta, har bir ustozga bitta xabarda barcha topshirilmagan testlari."""
+    loc = local(now)
+    if loc.hour < cfg.daily_reminder_hour or is_quiet(now, *cfg.quiet_hours):
+        return
+    today = loc.strftime("%Y-%m-%d")
+    if await db.get_setting("daily_reminder_sent") == today:
+        return
+    await db.set_setting("daily_reminder_sent", today)
+    pending: dict[int, list[Test]] = {}
+    for t in await db.published_tests():
+        if t.deadline_at:
+            continue
+        for u in await db.non_submitters(t, only_before_publish=False):
+            pending.setdefault(u.id, []).append(t)
+    for uid, tests in pending.items():
+        lines = [f"⏰ <b>Eslatma:</b> topshirilmagan testlaringiz — {len(tests)} ta", ""]
+        lines += [f"• «{escape(t.title)}» — {t.n} ta savol, kod <code>{t.id}</code>" for t in tests[:15]]
+        lines += ["", f"Tez yuborish: <code>kod*abcd...</code>. Topshirmaslik: −{cfg.penalty_not_submitted} {COIN}"]
+        await safe_send(bot, uid, "\n".join(lines), kb.pending_tests_kb(tests[:15]))
 
 
 # ---------------- kalitni tuzatish ----------------
@@ -384,13 +414,9 @@ async def manual_coins(bot: Bot, db: Database, group: Group, target: User, amoun
 
 async def publish_or_queue(bot: Bot, db: Database, cfg: Config, test: Test, now: datetime,
                            hours: int | None = None, deadline: datetime | None = None) -> str:
-    """'published' | 'queued' | 'busy' (faol test bor va aniq sana berilgan — navbatga qo'yib bo'lmaydi)."""
-    if await db.active_test(test.group_id):
-        if not hours:
-            return "busy"
-        await db.queue_test(test.id, hours, now)
-        return "queued"
-    dl = deadline or now + timedelta(hours=hours or 24)
+    """Testni darhol nashr qiladi ('published'; nashr bo'lmasa 'busy'). Bir guruhda bir nechta faol test bo'lishi mumkin.
+    deadline ham, hours ham berilmasa (yoki hours=0) — muddatsiz test."""
+    dl = deadline or (now + timedelta(hours=hours) if hours else None)
     return "published" if await publish(bot, db, cfg, test, dl, now) else "busy"
 
 
@@ -486,6 +512,7 @@ async def lesson_summary(db: Database, lesson: Lesson, now: datetime) -> str:
     status = (f"🟢 kod {local(lesson.closes_at):%H:%M} gacha ishlaydi" if lesson.is_open(now) else "kod yopilgan")
     lines = [f"🎥 <b>{lesson_label(lesson)}</b>", f"Kod: <code>{lesson.code}</code> · {status}",
              f"Qatnashdi: <b>{len(roster) - len(absent)}</b> / {len(roster)}"]
+    lines.append(f"📺 Yozuv: {escape(lesson.video_url)}" if lesson.video_url else "📺 Yozuv: hali qo'shilmagan")
     if absent:
         lines += ["", f"<b>Qatnashmaganlar ({len(absent)}):</b>"]
         lines += [f"• {escape(u.full_name)} — <code>{u.phone}</code>" for u in absent[:60]]
@@ -507,3 +534,31 @@ async def close_lesson(bot: Bot, db: Database, cfg: Config, lesson: Lesson, now:
     await notify_admins(bot, db, cfg, lesson.group_id,
                         f"🏁 Jonli dars yakunlandi ({escape(g.name)})\n\n" + await lesson_summary(db, lesson, now))
     return True
+
+
+
+# ---------------- dars yozuvlari ----------------
+
+_URL_RE = re.compile(r"^https?://[^\s<>\"']{4,490}$")
+
+
+def clean_video_url(raw: str | None) -> str | None:
+    """To'g'ri havola bo'lsa uni qaytaradi (bo'sh — None), aks holda ValueError."""
+    url = (raw or "").strip()
+    if not url:
+        return None
+    if not url.startswith(("http://", "https://")) and re.match(r"^(www\.)?(youtube\.com|youtu\.be)/", url):
+        url = "https://" + url
+    if not _URL_RE.match(url):
+        raise ValueError("Havola noto'g'ri. Masalan: https://youtu.be/abc123")
+    return url
+
+
+async def announce_recording(bot: Bot, db: Database, lesson: Lesson) -> int:
+    """Guruh a'zolariga yozuv qo'shilgani haqida xabar (havola tugmasi bilan)."""
+    sent = 0
+    text = (f"📺 Jonli dars yozuvi qo'shildi: {lesson_label(lesson)}\n\n"
+            "Barcha yozuvlar: botdagi «📺 Dars yozuvlari» bo'limida.")
+    for m in await db.list_members(lesson.group_id):
+        sent += await safe_send(bot, m.id, text, kb.video_kb(lesson.video_url))
+    return sent

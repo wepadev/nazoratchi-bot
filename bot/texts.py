@@ -15,6 +15,7 @@ BTN_APPEALS = "📨 E'tirozlar"
 BTN_CANCEL = "✖️ Bekor qilish"
 BTN_SKIP = "⏭ O'tkazib yuborish"
 BTN_ATTEND = "🎥 Davomat"
+BTN_RECORDINGS = "📺 Dars yozuvlari"
 BTN_AUTO_CODE = "🎲 Avtomatik kod"
 
 # ---- Ro'yxatdan o'tish ----
@@ -53,13 +54,17 @@ ASK_ANSWERS = (
     "• yoki raqam bilan: <code>1a 2b 3c ...</code>\n\n"
     "Javob bermagan savolga <code>x</code> yozing (raqamli formatda shunchaki tashlab keting).\n"
     "Keyingi safar tugmasiz ham bo'ladi: <code>{code}*abcd...</code>\n"
-    "Muddat: {deadline} ({left} qoldi)"
+    "{deadline_line}"
 )
 CONFIRM_ANSWERS = ("Javoblaringizni tekshiring:\n{preview}\n"
                    "{blank}⚠️ Tasdiqlagandan keyin o'zgartirib bo'lmaydi.")
 SUBMITTED = ("✅ Javoblaringiz qabul qilindi!\n\n"
              "Natija: <b>{correct}/{n}</b> (+{coins} 🪙)\n\n"
              "Qaysi savollarda xato qilganingiz va to'g'ri javoblar muddat tugagach yuboriladi.")
+SUBMITTED_OPEN = ("✅ Javoblaringiz qabul qilindi!\n\n"
+                  "Natija: <b>{correct}/{n}</b> (+{coins} 🪙)\n"
+                  "{wrong}\n\n"
+                  "To'g'ri javoblar test yakunlanganda yuboriladi.")
 ALREADY_SUBMITTED = "Siz bu testni allaqachon topshirgansiz: {correct}/{n}."
 TEST_NOT_ACTIVE = "Bu test faol emas yoki muddati tugagan."
 ASK_APPEAL = ("⚖️ <b>E'tiroz</b>\n\nQaysi savol bo'yicha va nima uchun? Bitta xabarda yozing.\n"
@@ -113,3 +118,6 @@ ASK_LESSON_DURATION = "Kod <code>{code}</code>. Qancha vaqt ishlasin?"
 
 def IN_OTHER_GROUP(name: str) -> str:  # noqa: N802 — boshqa matn konstantalari bilan bir xil ko'rinishda
     return IN_OTHER_GROUP_TPL.format(name=name, btn=BTN_MY_GROUPS)
+ASK_VIDEO_URL = ("📺 Dars yozuvining <b>YouTube havolasini</b> yuboring.\n\nMasalan: <code>https://youtu.be/abc123</code>\n"
+                 "Yozuvni olib tashlash uchun <code>-</code> yuboring.")
+NO_RECORDINGS = "Hozircha dars yozuvlari yo'q. Yozuv qo'shilganda bot xabar beradi. 🔔"

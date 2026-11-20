@@ -54,8 +54,11 @@ async def card_text(db: Database, t: Test) -> str:
         lines.append(f"Davomiyligi: {t.queue_hours} soat (oldingi test yakunlangach avtomatik nashr qilinadi)")
     if t.published_at:
         lines.append(f"Nashr: {fmt(t.published_at)}")
-        left = f" ({fmt_left(t.deadline_at - now)} qoldi)" if t.status == "published" else ""
-        lines.append(f"Muddat: {fmt(t.deadline_at)}{left}")
+        if t.deadline_at:
+            left = f" ({fmt_left(t.deadline_at - now)} qoldi)" if t.status == "published" else ""
+            lines.append(f"Muddat: {fmt(t.deadline_at)}{left}")
+        else:
+            lines.append("Muddat: ♾ cheklanmagan (yakunlaganingizda yopiladi)")
         subs = await db.list_submissions(t.id)
         group = await db.get_group(t.group_id)
         lines.append(f"Topshirdi: {len(subs)} / {group.member_count}")
@@ -73,7 +76,7 @@ async def tests_list_text(db: Database, group_id: int) -> str:
     g = await db.get_group(group_id)
     return (f"📝 <b>{escape(g.name)}</b> — testlar\n\n"
             "🟢 faol · ⏳ navbatda · 📄 qoralama · ✅ yakunlangan\n"
-            "Testlar navbat bilan nashr qilinadi: bir vaqtda bitta faol test.\n\n"
+            "Bir vaqtda bir nechta test faol bo'lishi mumkin; muddatsiz testlar siz yakunlamaguningizcha turadi.\n\n"
             "⚡️ Tez yaratish — botga bitta xabar: <code>+Nomi*abcdabcd...</code>\n"
             "(PDF yoki rasmni shu matnni izoh qilib yuborsangiz, fayl ham qo'shiladi)")
 
@@ -178,15 +181,12 @@ async def publish_menu(call: CallbackQuery, callback_data: kb.TestCb, db: Databa
     t = await test_access(db, callback_data.test_id, user, is_super)
     if not t or t.status != "draft":
         return await deny(call)
-    active = await db.active_test(t.group_id)
     await call.answer()
-    if active:
-        text = (f"Guruhda faol test bor: «{escape(active.title)}» (muddat {fmt(active.deadline_at)}).\n\n"
-                f"«{escape(t.title)}» <b>navbatga</b> qo'yiladi va oldingisi yakunlanishi bilan avtomatik "
-                "nashr qilinadi. Davomiyligini tanlang:")
-    else:
-        text = f"«{escape(t.title)}» uchun muddatni tanlang (nashr vaqtidan boshlab):"
-    await call.message.edit_text(text, reply_markup=kb.publish_kb(t.id, queue=bool(active)))
+    text = (f"«{escape(t.title)}» nashr qilinadi va hamma ustozlarga darhol yuboriladi.\n\n"
+            "<b>♾ Muddatsiz</b> — siz yakunlamaguningizcha faol turadi (xato savollar raqami darhol, "
+            "to'g'ri javoblar va −5 jarima yakunlanganda).\n"
+            "Yoki muddat tanlang — muddat tugaganda avtomatik yakunlanadi:")
+    await call.message.edit_text(text, reply_markup=kb.publish_kb(t.id))
 
 
 @router.callback_query(kb.TestCb.filter(F.action == "pub"))
@@ -194,16 +194,12 @@ async def publish_duration(call: CallbackQuery, callback_data: kb.TestCb, db: Da
                            user: User, is_super: bool):
     t = await test_access(db, callback_data.test_id, user, is_super)
     hours = callback_data.arg
-    if not t or t.status != "draft" or not (1 <= hours <= 24 * 31):
+    if not t or t.status != "draft" or not (0 <= hours <= 24 * 31):
         return await deny(call)
     now = utcnow()
-    if await db.active_test(t.group_id):
-        await db.queue_test(t.id, hours, now)
-        await call.answer("Navbatga qo'yildi ⏳")
-    else:
-        await call.answer("Nashr qilinmoqda…")
-        if not await services.publish(bot, db, config, t, now + timedelta(hours=hours), now):
-            return await call.message.answer("Nashr qilib bo'lmadi: guruhda boshqa faol test paydo bo'ldi.")
+    await call.answer("Nashr qilinmoqda…")
+    if await services.publish_or_queue(bot, db, config, t, now, hours=hours) != "published":
+        return await call.message.answer("Nashr qilib bo'lmadi: test allaqachon nashr qilingan.")
     await show_test(call, db, await db.get_test(t.id))
 
 
@@ -232,7 +228,7 @@ async def publish_date_finish(message: Message, state: FSMContext, db: Database,
     if not t or t.status != "draft":
         return await message.answer(T.NOT_FOUND, reply_markup=menu(is_admin, is_super))
     ok = await services.publish(bot, db, config, t, deadline, now)
-    await message.answer("🚀 Nashr qilindi!" if ok else "Nashr qilib bo'lmadi: guruhda boshqa faol test bor.",
+    await message.answer("🚀 Nashr qilindi!" if ok else "Nashr qilib bo'lmadi: test allaqachon nashr qilingan.",
                          reply_markup=menu(is_admin, is_super))
     t = await db.get_test(t.id)
     await message.answer((await card_text(db, t))[:4000], reply_markup=kb.test_kb(t))

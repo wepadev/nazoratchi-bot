@@ -304,14 +304,14 @@ async def publish_test(request: web.Request) -> web.Response:
         hours = None
     else:
         try:
-            hours = int(hours)
+            hours = int(hours or 0)  # 0 — muddatsiz
         except (TypeError, ValueError):
-            hours = 0
-        if not 1 <= hours <= 24 * 31:
+            hours = -1
+        if not 0 <= hours <= 24 * 31:
             return err(400, "bad_hours", "Davomiylikni tanlang.")
     result = await services.publish_or_queue(bot, db, cfg, t, now, hours=hours, deadline=deadline)
-    if result == "busy":
-        return err(409, "busy", "Guruhda faol test bor. Aniq sana bilan emas, davomiylik bilan navbatga qo'ying.")
+    if result != "published":
+        return err(409, "bad_state", "Test allaqachon nashr qilingan.")
     return web.json_response({"result": result})
 
 
@@ -444,7 +444,7 @@ def lesson_json(lesson, roster, now) -> dict:
     present = sum(1 for _, p in roster if p)
     return {"id": lesson.id, "group_id": lesson.group_id, "title": lesson.title, "code": lesson.code,
             "created_at": iso(lesson.created_at), "closes_at": iso(lesson.closes_at),
-            "open": lesson.is_open(now), "present": present, "total": len(roster)}
+            "open": lesson.is_open(now), "present": present, "total": len(roster), "video_url": lesson.video_url}
 
 
 async def managed_lesson(request: web.Request):
@@ -498,7 +498,14 @@ async def create_lesson(request: web.Request) -> web.Response:
     if minutes not in [m for m, _ in services.LESSON_DURATIONS]:
         return err(400, "bad_minutes", "Davomiylikni tanlang.")
     title = clean_name(data.get("title"), 2, 80) or "Jonli dars"
-    lesson = await db.create_lesson(g.id, title, code, request[R_USER].id, now, services.lesson_closes_at(now, minutes))
+    try:
+        video = services.clean_video_url(data.get("video_url"))
+    except ValueError as e:
+        return err(400, "bad_url", str(e))
+    lesson = await db.create_lesson(g.id, title, code, request[R_USER].id, now, services.lesson_closes_at(now, minutes),
+                                    video_url=video)
+    if video:
+        await services.announce_recording(request.app[K_BOT], db, lesson)
     return web.json_response(lesson_json(lesson, [], now))
 
 
@@ -574,6 +581,25 @@ async def attendance_excel(request: web.Request) -> web.Response:
     return web.json_response({"ok": True})
 
 
+@admin_only
+async def lesson_video(request: web.Request) -> web.Response:
+    """Dars yozuvi havolasini qo'yadi / almashtiradi (bo'sh — olib tashlaydi). Yangi havola ustozlarga yuboriladi."""
+    db = request.app[K_DB]
+    lesson = await managed_lesson(request)
+    if not lesson:
+        return err(403, *NO_ACCESS)
+    try:
+        url = services.clean_video_url((await body(request)).get("url"))
+    except ValueError as e:
+        return err(400, "bad_url", str(e))
+    changed = url != lesson.video_url
+    await db.set_lesson_video(lesson.id, url)
+    sent = 0
+    if url and changed:
+        sent = await services.announce_recording(request.app[K_BOT], db, await db.get_lesson(lesson.id))
+    return web.json_response({"ok": True, "sent": sent, "video_url": url})
+
+
 def setup_lessons(app: web.Application) -> None:
     r = app.router
     r.add_get(r"/api/admin/groups/{group_id:\d+}/lessons", group_lessons)
@@ -583,3 +609,4 @@ def setup_lessons(app: web.Application) -> None:
     r.add_post(r"/api/admin/lessons/{lesson_id:\d+}/mark", mark_lesson)
     r.add_delete(r"/api/admin/lessons/{lesson_id:\d+}", delete_lesson)
     r.add_post("/api/admin/attendance/excel", attendance_excel)
+    r.add_post(r"/api/admin/lessons/{lesson_id:\d+}/video", lesson_video)

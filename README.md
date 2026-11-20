@@ -19,10 +19,13 @@ bot avtomatik tekshiradi, tanga beradi va reyting tuzadi.
    Ustoz bir vaqtda **faqat bitta guruhda** bo'ladi: boshqasiga o'tish uchun avval 📚 Guruhlarim → 🚪 Chiqish
    (chiqqanda nazoratchiga xabar boradi). Qoida bazaning o'zida tekshiriladi.
 3. Nazoratchi: **🗂 Guruhlar → guruh → 📝 Testlar → ➕ Yangi test** → nom → fayl (PDF/rasm, ixtiyoriy) → kalit (`abcd...` yoki `1a 2b ...`).
-4. **🚀 Nashr qilish** → muddat (12 soat … 1 hafta yoki aniq sana). Guruhda bir vaqtda **bitta** faol test bo'ladi;
-   agar faol test bo'lsa, yangisi **navbatga** qo'yiladi va oldingisi yakunlanishi bilan avtomatik nashr qilinadi.
+4. **🚀 Nashr qilish** → **♾ Muddatsiz** (standart) yoki muddat (1 kun … 1 hafta, aniq sana). Bir guruhda bir vaqtda
+   **bir nechta** test faol bo'lishi mumkin. Muddatsiz test nazoratchi **Hozir yakunlash** ni bosmaguncha faol turadi.
 5. Ustozlar **✍️ Javob yuborish** → javoblar → tasdiqlash. Bot darhol natijani aytadi (`27/30`), javob faqat bir marta qabul qilinadi.
-6. Topshirmaganlarga har **3 soatda** eslatma (tunda emas) va muddatdan **1 soat** oldin oxirgi eslatma.
+6. Eslatmalar: muddatli testlarda topshirmaganlarga har **3 soatda** (tunda emas) va muddatdan **1 soat** oldin;
+   muddatsiz testlarda **kuniga bir marta** (19:00) — har bir ustozga bitta xabarda barcha topshirilmagan testlari.
+   Muddatsiz testda ustoz javob yuborishi bilan **xato savollar raqamini** ko'radi; to'g'ri javoblar va −5 jarima
+   test yakunlanganda.
 7. Muddat tugaganda:
    - topshirmaganlardan **−5 tanga** (test nashridan keyin qo'shilganlarga jarima yo'q);
    - har bir ustozga xatolari va to'g'ri javoblar yuboriladi (kalit faqat shu paytda ochiladi);
@@ -47,6 +50,8 @@ bot avtomatik tekshiradi, tanga beradi va reyting tuzadi.
 - Excel: «📥 Davomat Excel» — nazoratchining barcha guruhlari bitta faylda (Umumiy, Darslar, har guruh uchun ustoz × sana).
   Guruh hisobotida ham «Davomat» varag'i bor.
 - Darsdan keyin guruhga qo'shilganlar o'sha dars uchun qatnashmagan hisoblanmaydi.
+- **📺 Dars yozuvlari:** nazoratchi darsga YouTube havolasini qo'shadi (bot: dars kartochkasi → 📺; Mini App: dars sahifasi).
+  Yangi havola guruhdagi ustozlarga yuboriladi; ustozlarda botdagi «📺 Dars yozuvlari» va Mini App bosh sahifasida doim turadi.
 - Tanga: qatnashgan **+5** (kod kiritilishi bilan), qoldirgan **−5** (kod yopilganda, ustozga xabar boradi).
   Nazoratchi qo'lda belgilasa yoki belgini olsa, farq avtomatik to'g'rilanadi; dars o'chirilsa, uning tangalari ham o'chadi.
   `COINS_PER_LESSON`, `PENALTY_MISSED_LESSON` bilan o'zgartiriladi.

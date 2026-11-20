@@ -83,7 +83,7 @@ def test_api():
         # nazoratchi
         await get("/api/admin/groups", 301, 403)
         ag = await get("/api/admin/groups", ADMIN)
-        assert ag["groups"][0]["active"]["submitted"] == 4
+        assert ag["groups"][0]["actives"][0]["submitted"] == 4
         grp = await get(f"/api/admin/groups/{ids['group']}", ADMIN)
         assert {t["status"] for t in grp["tests"]} == {"published", "closed"}
         st = await get(f"/api/admin/tests/{ids['closed']}", ADMIN)
@@ -155,24 +155,30 @@ def test_admin_actions():
         await call("POST", f"/api/admin/tests/{tid}/key", ADMIN, json={"key": "AAAAA"})
         assert (await db.get_test(tid)).answer_key == "AAAAA"
 
-        # faol test bor -> aniq sana bilan bo'lmaydi, davomiylik bilan navbatga
-        info = await call("GET", f"/api/admin/tests/{tid}", ADMIN)
-        assert info["active_other"] == "2-hafta: Trigonometriya"
-        await call("POST", f"/api/admin/tests/{tid}/publish", ADMIN, 409, json={"deadline": "2099-01-01T10:00:00+05:00"})
-        r = await call("POST", f"/api/admin/tests/{tid}/publish", ADMIN, json={"hours": 48})
-        assert r["result"] == "queued"
-        await call("POST", f"/api/admin/tests/{tid}/unqueue", ADMIN)
-        assert (await db.get_test(tid)).status == "draft"
+        # boshqa test faol bo'lsa ham nashr qilinadi (bir vaqtda bir nechta faol test)
+        await call("POST", f"/api/admin/tests/{tid}/publish", ADMIN, 400, json={"deadline": "2000-01-01T10:00:00+05:00"})
+        r = await call("POST", f"/api/admin/tests/{tid}/publish", ADMIN, json={"deadline": "2099-01-01T10:00:00+05:00"})
+        assert r["result"] == "published"
+        assert len(await db.active_tests(gid)) == 2
+        await call("POST", f"/api/admin/tests/{tid}/publish", ADMIN, 409, json={})  # qayta nashr yo'q
 
-        # faol testni yakunlash -> navbat bo'sh, endi aniq sana bilan nashr
+        # muddatsiz test: draft -> hours 0
+        form = aiohttp.FormData()
+        form.add_field("title", "Muddatsiz")
+        form.add_field("key", "AB")
+        open_id = (await call("POST", f"/api/admin/groups/{gid}/tests", ADMIN, data=form))["id"]
+        await call("POST", f"/api/admin/tests/{open_id}/publish", ADMIN, json={"hours": 0})
+        assert (await db.get_test(open_id)).deadline_at is None
+        r = await client.post(f"/api/tests/{open_id}/submit", json={"answers": "AA"}, headers={"X-Telegram-Init-Data": init_data(301)})
+        assert (await r.json())["wrong"] == [2]
+        t = await call("GET", f"/api/tests/{open_id}", 301)
+        assert t["wrong"] == [2] and t["key"] is None  # xato raqami bor, kalit yo'q
+
         session.sent.clear()
         r = await call("POST", f"/api/admin/tests/{ids['active']}/remind", ADMIN)
         assert r["sent"] == 5  # 8 a'zodan 3 tasi topshirgan
         await call("POST", f"/api/admin/tests/{ids['active']}/close", ADMIN)
         assert (await db.get_test(ids["active"])).status == "closed"
-        await call("POST", f"/api/admin/tests/{tid}/publish", ADMIN, 400, json={"deadline": "2000-01-01T10:00:00+05:00"})
-        r = await call("POST", f"/api/admin/tests/{tid}/publish", ADMIN, json={"deadline": "2099-01-01T10:00:00+05:00"})
-        assert r["result"] == "published"
         await call("DELETE", f"/api/admin/tests/{tid}", ADMIN, 409)  # faol testni o'chirib bo'lmaydi
 
         # yakunlangan test kalitini tuzatish -> natijalar qayta hisoblanadi
