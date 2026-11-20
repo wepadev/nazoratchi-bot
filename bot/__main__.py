@@ -45,7 +45,8 @@ async def main() -> None:
     # muddatlar, eslatmalar va haftalik reyting uchun fon jarayoni
     bg = asyncio.create_task(scheduler.run(bot, db, config))
     try:
-        await bot.delete_webhook(drop_pending_updates=True)
+        # qayta ishga tushish (yangilanish) paytida yuborilgan xabarlar yo'qolmasin — ular navbatdan ishlanadi
+        await bot.delete_webhook(drop_pending_updates=False)
         await dp.start_polling(bot)
     finally:
         bg.cancel()
