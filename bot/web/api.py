@@ -175,6 +175,26 @@ async def rating(request: web.Request) -> web.Response:
     return web.json_response({"group": {"id": g.id, "name": g.name}, "period": period, "rows": out, "me": mine})
 
 
+async def attend(request: web.Request) -> web.Response:
+    """Ustoz jonli dars kodini kiritadi."""
+    code = str((await body_json(request)).get("code", "")).strip()
+    if not services.valid_lesson_code(code):
+        return err(400, "bad_code", "Kod aynan 4 ta raqamdan iborat bo'lishi kerak.")
+    status, lessons = await services.attend(request.app[K_DB], request[R_USER], code, utcnow())
+    text = re.sub(r"<[^>]+>", "", services.attend_reply(status, lessons))
+    if status in ("wrong", "blocked"):
+        return err(429 if status == "blocked" else 404, status, text)
+    return web.json_response({"status": status, "message": text})
+
+
+async def body_json(request: web.Request) -> dict:
+    try:
+        data = await request.json()
+        return data if isinstance(data, dict) else {}
+    except Exception:
+        return {}
+
+
 # ---------------- nazoratchi ----------------
 
 def admin_only(handler):
@@ -262,6 +282,7 @@ def create_app(db: Database, bot: Bot, cfg: Config) -> web.Application:
     app.router.add_static("/static/", STATIC)
     app.router.add_get("/api/me", me)
     app.router.add_get("/api/home", home)
+    app.router.add_post("/api/attend", attend)
     app.router.add_get(r"/api/tests/{test_id:\d+}", get_test)
     app.router.add_post(r"/api/tests/{test_id:\d+}/submit", submit_test)
     app.router.add_get(r"/api/groups/{group_id:\d+}/rating", rating)

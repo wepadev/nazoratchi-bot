@@ -210,3 +210,5 @@ textarea.input { height: auto; min-height: 76px; padding: 12px 14px; resize: ver
 .filepick { display: flex; align-items: center; gap: 12px; cursor: pointer; }
 .filepick .btn { height: 44px; flex: none; }
 .filepick .fname { font-size: 14px; color: var(--muted); min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.lcode { font-size: 56px; font-weight: 800; letter-spacing: 12px; color: var(--brand); margin: 8px 0 6px;
+  font-variant-numeric: tabular-nums; padding-left: 12px; }

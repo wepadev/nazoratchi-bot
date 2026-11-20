@@ -14,6 +14,8 @@ BTN_ACTIVITY = "📈 Faoliyat"
 BTN_APPEALS = "📨 E'tirozlar"
 BTN_CANCEL = "✖️ Bekor qilish"
 BTN_SKIP = "⏭ O'tkazib yuborish"
+BTN_ATTEND = "🎥 Davomat"
+BTN_AUTO_CODE = "🎲 Avtomatik kod"
 
 # ---- Ro'yxatdan o'tish ----
 WELCOME = (
@@ -96,3 +98,11 @@ ADMIN_USER_NOT_FOUND = "Bunday foydalanuvchi topilmadi. U avval botda ro'yxatdan
 YOU_ARE_ADMIN_NOW = "🎉 Sizga nazoratchi huquqi berildi! Menyu yangilandi."
 YOU_ARE_NOT_ADMIN = "Sizning nazoratchi huquqingiz olib tashlandi."
 YOU_ASSIGNED = "📌 Siz <b>{name}</b> guruhiga nazoratchi etib tayinlandingiz."
+
+# ---- Jonli dars ----
+ASK_ATTEND_CODE = "🎥 Jonli dars oxirida aytilgan <b>4 xonali kodni</b> yuboring.\n\nKeyingi safar shunchaki kodni yozib yuborsangiz ham bo'ladi."
+ASK_LESSON_CODE = ("🎥 Yangi jonli dars.\n\nDars oxirida aytiladigan <b>4 xonali kodni</b> yozing "
+                   "yoki «{btn}» ni bosing.").format(btn=BTN_AUTO_CODE)
+BAD_LESSON_CODE = "Kod aynan 4 ta raqamdan iborat bo'lishi kerak, masalan <code>4821</code>."
+LESSON_CODE_BUSY = "Bu guruhda shu kod bilan ochiq dars bor. Boshqa kod tanlang."
+ASK_LESSON_DURATION = "Kod <code>{code}</code>. Qancha vaqt ishlasin?"

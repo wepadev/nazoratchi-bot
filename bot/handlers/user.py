@@ -36,6 +36,10 @@ class AppealForm(StatesGroup):
     text = State()
 
 
+class Attend(StatesGroup):
+    code = State()
+
+
 # ---------------- guruhga qo'shilish ----------------
 
 @router.message(F.text == T.BTN_JOIN)
@@ -264,6 +268,33 @@ async def profile(message: Message, db: Database, user: User, is_admin: bool, is
             avg_s = f", o'rtacha {avg:.0f}%" if avg is not None else ""
             lines.append(f"📁 {escape(g.name)}: <b>{coins}</b> 🪙 · {place}-o'rin · {cnt} ta test{avg_s}")
     await message.answer("\n".join(lines))
+
+
+# ---------------- jonli dars davomati ----------------
+
+@router.message(F.text == T.BTN_ATTEND)
+async def attend_start(message: Message, state: FSMContext):
+    await state.set_state(Attend.code)
+    await message.answer(T.ASK_ATTEND_CODE, reply_markup=kb.cancel_kb())
+
+
+@router.message(Attend.code, F.text)
+async def attend_code(message: Message, state: FSMContext, db: Database, user: User,
+                      is_admin: bool, is_super: bool):
+    code = "".join(message.text.split())
+    if not services.valid_lesson_code(code):
+        return await message.answer(T.BAD_LESSON_CODE)
+    status, lessons = await services.attend(db, user, code, utcnow())
+    if status == "wrong":
+        return await message.answer(services.attend_reply(status, lessons))
+    await state.clear()
+    await message.answer(services.attend_reply(status, lessons), reply_markup=menu(is_admin, is_super))
+
+
+@router.message(StateFilter(None), F.text.regexp(r"^\s*\d{4}\s*$"))
+async def attend_quick(message: Message, db: Database, user: User):
+    status, lessons = await services.attend(db, user, message.text.strip(), utcnow())
+    await message.answer(services.attend_reply(status, lessons))
 
 
 # ---------------- tez yuborish: "kod*javoblar" yoki shunchaki "abcd..." ----------------

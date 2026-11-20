@@ -10,7 +10,7 @@ from aiohttp import web
 
 from .. import services
 from ..db import normalize_phone
-from ..excel import group_report
+from ..excel import attendance_report, group_report
 from ..timeutil import local, utcnow
 from .api import K_BOT, K_CFG, K_DB, R_ADMIN, R_SUPER, R_USER, can_manage, err, iso
 
@@ -435,3 +435,143 @@ def setup(app: web.Application) -> None:
     r.add_post(r"/api/admin/tests/{test_id:\d+}/key", update_key)
     r.add_get("/api/admin/appeals", appeals)
     r.add_post(r"/api/admin/appeals/{appeal_id:\d+}", resolve_appeal)
+    setup_lessons(app)
+
+
+# ======================= jonli darslar =======================
+
+def lesson_json(lesson, roster, now) -> dict:
+    present = sum(1 for _, p in roster if p)
+    return {"id": lesson.id, "group_id": lesson.group_id, "title": lesson.title, "code": lesson.code,
+            "created_at": iso(lesson.created_at), "closes_at": iso(lesson.closes_at),
+            "open": lesson.is_open(now), "present": present, "total": len(roster)}
+
+
+async def managed_lesson(request: web.Request):
+    db = request.app[K_DB]
+    lesson = await db.get_lesson(int(request.match_info["lesson_id"]))
+    if not lesson or not await can_manage(db, request, lesson.group_id):
+        return None
+    return lesson
+
+
+@admin_only
+async def group_lessons(request: web.Request) -> web.Response:
+    """Darslar ro'yxati + har bir ustozning qatnashmagan kunlari."""
+    db = request.app[K_DB]
+    g = await managed_group(request)
+    if not g:
+        return err(403, *NO_ACCESS)
+    now = utcnow()
+    lessons, members, att = await db.attendance_matrix(g.id)
+    out_lessons = []
+    for lesson in reversed(lessons):
+        roster = [(u, (lesson.id, u.id) in att) for u, j in members if not (j and j > lesson.closes_at)]
+        out_lessons.append(lesson_json(lesson, roster, now))
+    out_members = []
+    for u, joined in members:
+        held = [l for l in lessons if not l.is_open(now) and not (joined and joined > l.closes_at)]
+        missed = [iso(l.created_at) for l in held if (l.id, u.id) not in att]
+        out_members.append({"id": u.id, "name": u.full_name, "held": len(held),
+                            "present": len(held) - len(missed), "missed": missed})
+    out_members.sort(key=lambda m: (-len(m["missed"]), m["name"]))
+    return web.json_response({"group": {"id": g.id, "name": g.name}, "lessons": out_lessons, "members": out_members})
+
+
+@admin_only
+async def create_lesson(request: web.Request) -> web.Response:
+    db = request.app[K_DB]
+    g = await managed_group(request)
+    if not g:
+        return err(403, *NO_ACCESS)
+    data = await body(request)
+    now = utcnow()
+    code = str(data.get("code") or "").strip() or await services.new_lesson_code(db, g.id, now)
+    if not services.valid_lesson_code(code):
+        return err(400, "bad_code", "Kod aynan 4 ta raqamdan iborat bo'lishi kerak.")
+    if await db.open_code_in_group(g.id, code, now):
+        return err(409, "code_busy", "Bu guruhda shu kod bilan ochiq dars bor. Boshqa kod tanlang.")
+    try:
+        minutes = int(data.get("minutes", 60))
+    except (TypeError, ValueError):
+        minutes = 60
+    if minutes not in [m for m, _ in services.LESSON_DURATIONS]:
+        return err(400, "bad_minutes", "Davomiylikni tanlang.")
+    title = clean_name(data.get("title"), 2, 80) or "Jonli dars"
+    lesson = await db.create_lesson(g.id, title, code, request[R_USER].id, now, services.lesson_closes_at(now, minutes))
+    return web.json_response(lesson_json(lesson, [], now))
+
+
+@admin_only
+async def get_lesson(request: web.Request) -> web.Response:
+    db = request.app[K_DB]
+    lesson = await managed_lesson(request)
+    if not lesson:
+        return err(403, *NO_ACCESS)
+    now = utcnow()
+    roster = await db.lesson_roster(lesson)
+    g = await db.get_group(lesson.group_id)
+    return web.json_response(lesson_json(lesson, roster, now) | {
+        "group": g.name,
+        "people": [{"id": u.id, "name": u.full_name, "phone": u.phone, "present": p} for u, p in roster]})
+
+
+@admin_only
+async def close_lesson(request: web.Request) -> web.Response:
+    lesson = await managed_lesson(request)
+    if not lesson:
+        return err(403, *NO_ACCESS)
+    await services.close_lesson(request.app[K_BOT], request.app[K_DB], request.app[K_CFG], lesson, utcnow())
+    return web.json_response({"ok": True})
+
+
+@admin_only
+async def delete_lesson(request: web.Request) -> web.Response:
+    lesson = await managed_lesson(request)
+    if not lesson:
+        return err(403, *NO_ACCESS)
+    await request.app[K_DB].delete_lesson(lesson.id)
+    return web.json_response({"ok": True, "group_id": lesson.group_id})
+
+
+@admin_only
+async def mark_lesson(request: web.Request) -> web.Response:
+    """Nazoratchi qo'lda belgilaydi (masalan, ustoz kodni kirita olmagan bo'lsa)."""
+    db = request.app[K_DB]
+    lesson = await managed_lesson(request)
+    if not lesson:
+        return err(403, *NO_ACCESS)
+    data = await body(request)
+    uid = int(data.get("user_id") or 0)
+    if not await db.is_member(lesson.group_id, uid):
+        return err(404, "not_found", "Ustoz topilmadi.")
+    if data.get("present"):
+        await db.mark_attendance(lesson.id, uid, utcnow(), marked_by=request[R_USER].id)
+    else:
+        await db.unmark_attendance(lesson.id, uid)
+    return web.json_response({"ok": True})
+
+
+@admin_only
+async def attendance_excel(request: web.Request) -> web.Response:
+    db = request.app[K_DB]
+    groups = await db.list_groups(None if request[R_SUPER] else request[R_USER].id)
+    if not groups:
+        return err(404, "no_groups", "Guruh yo'q.")
+    now = utcnow()
+    data = await attendance_report(db, groups, now)
+    await request.app[K_BOT].send_document(
+        request[R_USER].id, BufferedInputFile(data, filename=f"davomat_{local(now):%Y-%m-%d}.xlsx"),
+        caption=f"🎥 Jonli darslar davomati: {len(groups)} ta guruh, barchasi bitta faylda")
+    return web.json_response({"ok": True})
+
+
+def setup_lessons(app: web.Application) -> None:
+    r = app.router
+    r.add_get(r"/api/admin/groups/{group_id:\d+}/lessons", group_lessons)
+    r.add_post(r"/api/admin/groups/{group_id:\d+}/lessons", create_lesson)
+    r.add_get(r"/api/admin/lessons/{lesson_id:\d+}", get_lesson)
+    r.add_post(r"/api/admin/lessons/{lesson_id:\d+}/close", close_lesson)
+    r.add_post(r"/api/admin/lessons/{lesson_id:\d+}/mark", mark_lesson)
+    r.add_delete(r"/api/admin/lessons/{lesson_id:\d+}", delete_lesson)
+    r.add_post("/api/admin/attendance/excel", attendance_excel)

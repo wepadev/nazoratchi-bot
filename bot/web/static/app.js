@@ -104,6 +104,8 @@
     [/^newgroup$/, () => newGroup()],
     [/^staff$/, () => staffPage()],
     [/^appeals$/, () => appealsPage()],
+    [/^lessons\/(\d+)$/, (id) => lessonsPage(+id)],
+    [/^lesson\/(\d+)$/, (id) => lessonPage(+id)],
   ];
 
   async function router() {
@@ -163,12 +165,22 @@
         <span class="chev">›</span></button>`).join("")}</div>` : `<div class="card empty">Natijalar shu yerda chiqadi.</div>`;
 
     render(`${hero}
+      ${g ? `<div class="section"><div class="card"><div class="title" style="font-weight:700">🎥 Jonli dars kodi</div>
+        <div class="h-sub" style="margin:4px 0 12px">Dars oxirida aytilgan 4 xonali kodni kiriting</div>
+        <div class="stepper"><input class="input" id="acode" inputmode="numeric" maxlength="4" placeholder="• • • •" style="letter-spacing:6px;font-size:20px">
+        <button class="btn" id="asend" style="width:auto;padding:0 18px;font-size:16px">Yuborish</button></div></div></div>` : ""}
       <div class="section"><div class="label">Faol testlar</div>${active}</div>
       ${g ? `<div class="section"><button class="btn ghost block" data-go="/rating/${g.id}">🏆 Reytingni ko'rish</button></div>` : ""}
       <div class="section"><div class="label">Natijalarim</div>${recent}</div>
       <p class="note">Har bir to'g'ri javob: +${HOME.rules.per_correct} tanga · Topshirmaslik: −${HOME.rules.penalty} tanga</p>`);
 
     $app.querySelectorAll("[data-g]").forEach((b) => b.onclick = () => { store.set("group", +b.dataset.g); haptic(); ustozHome(); });
+    const asend = document.getElementById("asend");
+    if (asend) {
+      const ainput = document.getElementById("acode");
+      asend.onclick = () => sendAttendance(ainput, asend);
+      ainput.onkeydown = (e) => { if (e.key === "Enter") sendAttendance(ainput, asend); };
+    }
   }
 
   // ---------- test sahifasi ----------
@@ -398,6 +410,7 @@
         ${abtn("👥", "Ustozlar", `data-go="/m/${g.id}"`)}
         ${abtn("🏆", "Reyting", `data-go="/rating/${g.id}"`)}
         ${abtn("📥", "Excel", `id="excel"`)}
+        ${abtn("🎥", "Jonli darslar", `data-go="/lessons/${g.id}"`)}
         ${abtn("🔄", "Yangi kod", `id="code"`)}
         ${sup ? abtn("👮", "Nazoratchilar", `data-go="/ga/${g.id}"`) : ""}
         ${sup ? abtn("✏️", "Nomini o'zgartirish", `id="rename"`) : ""}
@@ -713,6 +726,129 @@
         appealsPage();
       } catch (e) { toast(e.message); appealsPage(); }
     }));
+  }
+
+  // ================= JONLI DARSLAR =================
+  const LESSON_DURATIONS = [[30, "30 daqiqa"], [60, "1 soat"], [120, "2 soat"], [0, "Kun oxirigacha"]];
+  const dayLabel = (iso) => fmtDate(iso).split(" ")[0];
+  const timeLabel = (iso) => fmtDate(iso).split(" ")[1];
+
+  async function sendAttendance(input, btn) {
+    const code = input.value.replace(/\D/g, "");
+    if (code.length !== 4) { haptic("err"); return toast("Kod 4 ta raqamdan iborat bo'lishi kerak"); }
+    btn.disabled = true;
+    try { const r = await post("/api/attend", { code }); haptic("ok"); toast(r.message); input.value = ""; }
+    catch (e) { haptic("err"); toast(e.message); }
+    finally { btn.disabled = false; }
+  }
+
+  async function lessonsPage(gid) {
+    const d = await api(`/api/admin/groups/${gid}/lessons`);
+    let minutes = 60;
+    const open = d.lessons.filter((l) => l.open);
+    const openCards = open.map((l) => `<div class="card" style="text-align:center">
+        <div class="h-sub">${esc(l.title)} · ${dayLabel(l.created_at)}</div>
+        <div class="lcode">${esc(l.code)}</div>
+        <div class="h-sub">Dars oxirida shu kodni ayting · ${timeLabel(l.closes_at)} gacha ishlaydi</div>
+        <div style="margin:14px 0 4px"><span class="chip brand">Qatnashdi ${l.present}/${l.total}</span></div>
+        <div class="btn-row" style="margin-top:12px"><button class="btn ghost" data-go="/lesson/${l.id}">Ro'yxat</button>
+          <button class="btn line" data-close="${l.id}">Kodni yopish</button></div></div>`).join("");
+    const past = d.lessons.filter((l) => !l.open);
+    const list = past.length ? `<div class="list">${past.map((l) => {
+      const pct = l.total ? Math.round(100 * l.present / l.total) : 0;
+      return `<button class="row" data-go="/lesson/${l.id}"><div class="grow"><div class="t">${dayLabel(l.created_at)} · ${esc(l.title)}</div>
+        <div class="s">kod ${esc(l.code)} · ${l.total - l.present} kishi qatnashmadi</div></div>
+        <span class="chip ${pct >= 90 ? "ok" : pct >= 70 ? "muted" : "bad"}">${l.present}/${l.total}</span><span class="chev">›</span></button>`;
+    }).join("")}</div>` : `<div class="card empty">Hali yakunlangan dars yo'q.</div>`;
+    const missing = d.members.filter((m) => m.missed.length);
+    const full = d.members.length - missing.length;
+    const absent = missing.length ? `<div class="list">${missing.map((m) => `
+      <div class="row" style="align-items:flex-start"><div class="grow"><div class="t">${esc(m.name)}</div>
+        <div class="chips" style="margin-top:8px">${m.missed.map((x) => `<span class="chip bad">${dayLabel(x)}</span>`).join("")}</div></div>
+        <span class="chip muted">${m.present}/${m.held}</span></div>`).join("")}</div>`
+      : `<div class="card empty">${d.lessons.length ? "Hamma ustozlar barcha darslarda qatnashgan 👏" : "Ma'lumot yo'q."}</div>`;
+
+    render(`<div class="h-title">🎥 Jonli darslar</div><div class="h-sub">${esc(d.group.name)}</div>
+      ${openCards ? `<div class="section">${openCards}</div>` : ""}
+      <div class="section"><div class="card">
+        <div class="title" style="font-weight:700;margin-bottom:12px">➕ Yangi jonli dars</div>
+        <label class="field"><span>Mavzu (ixtiyoriy)</span><input class="input" id="ltitle" maxlength="80" placeholder="Masalan: Logarifmik tenglamalar"></label>
+        <div class="field"><span>4 xonali kod</span><div class="stepper">
+          <input class="input" id="lcode" inputmode="numeric" maxlength="4" placeholder="4821" style="letter-spacing:4px">
+          <button id="rnd" title="Avtomatik">🎲</button></div></div>
+        <div class="field"><span>Kod qancha ishlasin</span><div class="chips">${LESSON_DURATIONS.map(([m, l]) =>
+          `<button class="pick ${m === minutes ? "on" : ""}" data-min="${m}">${l}</button>`).join("")}</div></div>
+        <button class="btn block" id="lopen">Darsni ochish</button>
+        <p class="note" style="text-align:left">Dars oxirida kodni ayting. Ustozlar uni botga yoki ilovaga yozadi. Kod yopilganda qatnashmaganlar ro'yxati sizga keladi.</p>
+      </div></div>
+      <div class="section"><div class="label"><span>Qatnashmaganlar</span><span>${full ? `${full} kishi hammasida bor` : ""}</span></div>${absent}</div>
+      <div class="section"><div class="label">Darslar</div>${list}</div>
+      <div class="section"><button class="btn ghost block" id="axls">📥 Davomat Excel (barcha guruhlar)</button></div>`);
+
+    $app.querySelectorAll("[data-min]").forEach((b) => b.onclick = () => {
+      minutes = +b.dataset.min; $app.querySelectorAll("[data-min]").forEach((x) => x.classList.toggle("on", x === b)); haptic();
+    });
+    document.getElementById("rnd").onclick = () => {
+      document.getElementById("lcode").value = String(Math.floor(Math.random() * 10000)).padStart(4, "0"); haptic();
+    };
+    document.getElementById("lopen").onclick = async () => {
+      const code = document.getElementById("lcode").value.replace(/\D/g, "");
+      if (code && code.length !== 4) return toast("Kod 4 ta raqamdan iborat bo'lishi kerak");
+      try {
+        const r = await post(`/api/admin/groups/${gid}/lessons`, { code, minutes, title: document.getElementById("ltitle").value });
+        haptic("ok"); toast(`Dars ochildi. Kod: ${r.code}`); lessonsPage(gid);
+      } catch (e) { haptic("err"); toast(e.message); }
+    };
+    $app.querySelectorAll("[data-close]").forEach((b) => b.onclick = async () => {
+      if (!(await confirmBox("Kod yopilsinmi? Shundan keyin ustozlar uni kirita olmaydi."))) return;
+      try { await post(`/api/admin/lessons/${b.dataset.close}/close`); toast("Kod yopildi"); lessonsPage(gid); } catch (e) { toast(e.message); }
+    });
+    document.getElementById("axls").onclick = async () => {
+      try { await post("/api/admin/attendance/excel"); haptic("ok"); toast("📥 Excel fayl botga yuborildi"); } catch (e) { toast(e.message); }
+    };
+  }
+
+  async function lessonPage(id) {
+    const l = await api(`/api/admin/lessons/${id}`);
+    let tab = store.get("ltab") || "absent";
+    const draw = () => {
+      const absent = l.people.filter((p) => !p.present), present = l.people.filter((p) => p.present);
+      const shown = tab === "absent" ? absent : present;
+      const pct = l.total ? Math.round(100 * l.present / l.total) : 0;
+      render(`<div class="h-title">${esc(l.title)}</div>
+        <div class="h-sub">${esc(l.group)} · ${dayLabel(l.created_at)} · kod <span class="code">${esc(l.code)}</span></div>
+        <div class="h-sub" style="margin-top:4px">${l.open ? `🟢 kod ${timeLabel(l.closes_at)} gacha ishlaydi` : "Kod yopilgan"}</div>
+        <div class="section" style="margin-top:14px"><div class="tiles">
+          <div class="tile"><div class="v">${l.present}</div><div class="k">qatnashdi</div></div>
+          <div class="tile"><div class="v">${l.total - l.present}</div><div class="k">qatnashmadi</div></div>
+          <div class="tile"><div class="v">${pct}%</div><div class="k">davomat</div></div></div></div>
+        <div class="section"><div class="seg"><button data-t="absent" class="${tab === "absent" ? "on" : ""}">Qatnashmadi · ${absent.length}</button>
+          <button data-t="present" class="${tab === "present" ? "on" : ""}">Qatnashdi · ${present.length}</button></div></div>
+        <div class="section" style="margin-top:12px">${shown.length ? `<div class="list">${shown.map((p) => `
+          <button class="row" data-u="${p.id}"><div class="grow"><div class="t">${esc(p.name)}</div><div class="s">${esc(p.phone)}</div></div>
+            <span class="switch ${p.present ? "on" : ""}"></span></button>`).join("")}</div>
+          <p class="note">Kodni kirita olmaganlarni qo'lda belgilash uchun tugmani bosing.</p>`
+          : `<div class="card empty">${tab === "absent" ? "Hamma qatnashgan 👏" : "Hali hech kim kod kiritmagan."}</div>`}</div>
+        <div class="section"><div class="btn-row">${l.open ? `<button class="btn line" id="lclose">Kodni yopish</button>` : ""}
+          <button class="btn ghost" data-go="/lessons/${l.group_id}">Darslar</button></div>
+          <button class="btn line block" id="ldel" style="margin-top:10px">O'chirish</button></div>`);
+      $app.querySelectorAll("[data-t]").forEach((b) => b.onclick = () => { tab = b.dataset.t; store.set("ltab", tab); draw(); });
+      $app.querySelectorAll("[data-u]").forEach((b) => b.onclick = async () => {
+        const p = l.people.find((x) => x.id === +b.dataset.u);
+        try { await post(`/api/admin/lessons/${id}/mark`, { user_id: p.id, present: !p.present });
+          p.present = !p.present; l.present += p.present ? 1 : -1; haptic(); draw(); } catch (e) { toast(e.message); }
+      });
+      const c = document.getElementById("lclose");
+      if (c) c.onclick = async () => {
+        if (!(await confirmBox("Kod yopilsinmi?"))) return;
+        try { await post(`/api/admin/lessons/${id}/close`); toast("Kod yopildi"); Object.assign(l, await api(`/api/admin/lessons/${id}`)); draw(); } catch (e) { toast(e.message); }
+      };
+      document.getElementById("ldel").onclick = async () => {
+        if (!(await confirmBox("Bu dars va uning davomati o'chirilsinmi?"))) return;
+        try { await del(`/api/admin/lessons/${id}`); toast("O'chirildi"); go(`/lessons/${l.group_id}`); } catch (e) { toast(e.message); }
+      };
+    };
+    draw();
   }
 
   // ---------- ishga tushirish ----------

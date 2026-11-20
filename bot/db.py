@@ -101,6 +101,27 @@ CREATE TABLE IF NOT EXISTS appeals (
     resolved_at  TEXT
 );
 
+-- jonli darslar: nazoratchi kod qo'yadi, ustozlar dars oxirida kiritadi
+CREATE TABLE IF NOT EXISTS lessons (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    group_id    INTEGER NOT NULL REFERENCES groups(id) ON DELETE CASCADE,
+    title       TEXT    NOT NULL,
+    code        TEXT    NOT NULL,                 -- 4 xonali
+    created_by  INTEGER NOT NULL,
+    created_at  TEXT    NOT NULL,
+    closes_at   TEXT    NOT NULL,                 -- kod shu vaqtgacha ishlaydi
+    closed_at   TEXT                              -- yakuniy hisobot yuborilgan vaqt
+);
+CREATE INDEX IF NOT EXISTS idx_lessons_group ON lessons(group_id, created_at);
+
+CREATE TABLE IF NOT EXISTS attendance (
+    lesson_id   INTEGER NOT NULL REFERENCES lessons(id) ON DELETE CASCADE,
+    user_id     INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    marked_at   TEXT    NOT NULL,
+    marked_by   INTEGER,                          -- qo'lda belgilagan nazoratchi (aks holda NULL)
+    PRIMARY KEY (lesson_id, user_id)
+);
+
 CREATE TABLE IF NOT EXISTS settings (
     key   TEXT PRIMARY KEY,
     value TEXT
@@ -182,7 +203,30 @@ class Appeal:
     created_at: datetime
 
 
+@dataclass
+class Lesson:
+    id: int
+    group_id: int
+    title: str
+    code: str
+    created_by: int
+    created_at: datetime
+    closes_at: datetime
+    closed_at: datetime | None
+
+    def is_open(self, now: datetime) -> bool:
+        return self.closed_at is None and self.closes_at > now
+
+
 _USER_COLS = "u.id, u.phone, u.full_name, u.username, u.role"
+_LESSON_COLS = "l.id, l.group_id, l.title, l.code, l.created_by, l.created_at, l.closes_at, l.closed_at"
+
+
+def _lesson(row) -> Lesson:
+    d = dict(row)
+    for k in ("created_at", "closes_at", "closed_at"):
+        d[k] = from_db(d[k])
+    return Lesson(**d)
 _TEST_COLS = ("id, group_id, title, answer_key, file_id, file_type, status, queue_hours, created_by, "
               "published_at, deadline_at, reminded_at, final_reminded, closed_at")
 
@@ -606,6 +650,88 @@ class Database:
                  (SELECT COUNT(*) FROM coins c WHERE c.created_by = u.id) AS manual_coins
                FROM users u WHERE u.role = 'admin' ORDER BY u.full_name""")
         return [dict(r) | {"last_test": from_db(r["last_test"])} for r in rows]
+
+    # ================= jonli darslar =================
+    async def create_lesson(self, group_id: int, title: str, code: str, created_by: int, now: datetime,
+                            closes_at: datetime) -> Lesson:
+        cur = await self._exec(
+            "INSERT INTO lessons (group_id, title, code, created_by, created_at, closes_at) VALUES (?, ?, ?, ?, ?, ?)",
+            (group_id, title, code, created_by, to_db(now), to_db(closes_at)))
+        lesson = await self.get_lesson(cur.lastrowid)
+        assert lesson
+        return lesson
+
+    async def get_lesson(self, lesson_id: int) -> Lesson | None:
+        row = await self._one(f"SELECT {_LESSON_COLS} FROM lessons l WHERE l.id = ?", (lesson_id,))
+        return _lesson(row) if row else None
+
+    async def list_lessons(self, group_id: int, limit: int = 500) -> list[Lesson]:
+        rows = await self._all(f"SELECT {_LESSON_COLS} FROM lessons l WHERE l.group_id = ? "
+                               "ORDER BY l.created_at DESC, l.id DESC LIMIT ?", (group_id, limit))
+        return [_lesson(r) for r in rows]
+
+    async def open_code_in_group(self, group_id: int, code: str, now: datetime) -> bool:
+        return bool(await self._one(
+            "SELECT 1 FROM lessons WHERE group_id = ? AND code = ? AND closed_at IS NULL AND closes_at > ?",
+            (group_id, code, to_db(now))))
+
+    async def open_lessons_by_code(self, user_id: int, code: str, now: datetime) -> list[Lesson]:
+        """Foydalanuvchi guruhlaridagi, kodi mos va hali ochiq darslar."""
+        rows = await self._all(
+            f"""SELECT {_LESSON_COLS} FROM lessons l JOIN group_members m ON m.group_id = l.group_id
+                WHERE m.user_id = ? AND l.code = ? AND l.closed_at IS NULL AND l.closes_at > ?""",
+            (user_id, code, to_db(now)))
+        return [_lesson(r) for r in rows]
+
+    async def due_lessons(self, now: datetime) -> list[Lesson]:
+        rows = await self._all(f"SELECT {_LESSON_COLS} FROM lessons l WHERE l.closed_at IS NULL AND l.closes_at <= ?",
+                               (to_db(now),))
+        return [_lesson(r) for r in rows]
+
+    async def close_lesson(self, lesson_id: int, now: datetime) -> bool:
+        """Kodni yopadi; muddatidan oldin yopilsa closes_at ham qisqaradi."""
+        cur = await self._exec(
+            "UPDATE lessons SET closed_at = ?, closes_at = MIN(closes_at, ?) WHERE id = ? AND closed_at IS NULL",
+            (to_db(now), to_db(now), lesson_id))
+        return cur.rowcount > 0
+
+    async def delete_lesson(self, lesson_id: int) -> None:
+        await self._exec("DELETE FROM lessons WHERE id = ?", (lesson_id,))
+
+    async def mark_attendance(self, lesson_id: int, user_id: int, now: datetime,
+                              marked_by: int | None = None) -> bool:
+        cur = await self._exec(
+            "INSERT OR IGNORE INTO attendance (lesson_id, user_id, marked_at, marked_by) VALUES (?, ?, ?, ?)",
+            (lesson_id, user_id, to_db(now), marked_by))
+        return cur.rowcount > 0
+
+    async def unmark_attendance(self, lesson_id: int, user_id: int) -> None:
+        await self._exec("DELETE FROM attendance WHERE lesson_id = ? AND user_id = ?", (lesson_id, user_id))
+
+    async def lesson_present_ids(self, lesson_id: int) -> set[int]:
+        rows = await self._all("SELECT user_id FROM attendance WHERE lesson_id = ?", (lesson_id,))
+        return {r["user_id"] for r in rows}
+
+    async def lesson_roster(self, lesson: Lesson) -> list[tuple[User, bool]]:
+        """Dars vaqtida guruhda bo'lgan a'zolar va ular qatnashganmi (dars yopilgandan keyin qo'shilganlar kirmaydi)."""
+        rows = await self._all(
+            f"""SELECT {_USER_COLS}, EXISTS(SELECT 1 FROM attendance a WHERE a.lesson_id = ? AND a.user_id = u.id) AS present
+                FROM group_members m JOIN users u ON u.id = m.user_id
+                WHERE m.group_id = ? AND m.joined_at <= ?
+                ORDER BY u.full_name""",
+            (lesson.id, lesson.group_id, to_db(lesson.closes_at)))
+        return [(_user(r), bool(r["present"])) for r in rows]
+
+    async def attendance_matrix(self, group_id: int) -> tuple[list[Lesson], list[tuple[User, datetime | None]], set[tuple[int, int]]]:
+        """(darslar eskidan yangiga, a'zolar + qo'shilgan vaqti, {(lesson_id, user_id)} qatnashganlar)."""
+        lessons = list(reversed(await self.list_lessons(group_id)))
+        rows = await self._all(
+            f"SELECT {_USER_COLS}, m.joined_at FROM group_members m JOIN users u ON u.id = m.user_id "
+            "WHERE m.group_id = ? ORDER BY u.full_name", (group_id,))
+        members = [(_user(r), from_db(r["joined_at"])) for r in rows]
+        att = await self._all("SELECT a.lesson_id, a.user_id FROM attendance a JOIN lessons l ON l.id = a.lesson_id "
+                              "WHERE l.group_id = ?", (group_id,))
+        return lessons, members, {(r["lesson_id"], r["user_id"]) for r in att}
 
     # ================= settings =================
     async def get_setting(self, key: str) -> str | None:

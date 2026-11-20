@@ -3,6 +3,9 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import re
+import secrets
+import time
 from collections import Counter
 from datetime import datetime, timedelta
 from html import escape
@@ -14,8 +17,8 @@ from aiogram.types import InlineKeyboardMarkup
 from . import keyboards as kb
 from .answers import grade, mistakes, preview
 from .config import Config
-from .db import Database, Group, Test, User
-from .timeutil import fmt, fmt_left, is_quiet, week_start
+from .db import Database, Group, Lesson, Test, User
+from .timeutil import fmt, fmt_left, is_quiet, local, week_start
 
 log = logging.getLogger(__name__)
 MEDALS = {1: "🥇", 2: "🥈", 3: "🥉"}
@@ -389,3 +392,86 @@ async def publish_or_queue(bot: Bot, db: Database, cfg: Config, test: Test, now:
         return "queued"
     dl = deadline or now + timedelta(hours=hours or 24)
     return "published" if await publish(bot, db, cfg, test, dl, now) else "busy"
+
+
+# ---------------- jonli dars davomati ----------------
+
+LESSON_DURATIONS = [(30, "30 daqiqa"), (60, "1 soat"), (120, "2 soat"), (0, "Kun oxirigacha")]
+_CODE_RE = re.compile(r"^\d{4}$")
+MAX_WRONG_CODES, WRONG_WINDOW = 5, 600  # 10 daqiqada 5 ta xato urinish
+_wrong_codes: dict[int, list[float]] = {}
+
+
+def valid_lesson_code(code: str) -> bool:
+    return bool(_CODE_RE.match(code or ""))
+
+
+def lesson_closes_at(now: datetime, minutes: int) -> datetime:
+    """minutes = 0 — Toshkent vaqti bilan kun oxirigacha."""
+    if minutes > 0:
+        return now + timedelta(minutes=minutes)
+    end = local(now).replace(hour=23, minute=59, second=59, microsecond=0)
+    return end.astimezone(now.tzinfo)
+
+
+async def new_lesson_code(db: Database, group_id: int, now: datetime) -> str:
+    while True:
+        code = f"{secrets.randbelow(10000):04d}"
+        if not await db.open_code_in_group(group_id, code, now):
+            return code
+
+
+def lesson_label(lesson: Lesson) -> str:
+    return f"«{escape(lesson.title)}» · {local(lesson.created_at):%d.%m.%Y}"
+
+
+async def attend(db: Database, user: User, code: str, now: datetime) -> tuple[str, list[Lesson]]:
+    """'ok' | 'already' | 'wrong' | 'blocked'. Xato kodlar sanaladi — taxmin qilib topishning oldini olish uchun."""
+    clock = time.monotonic()
+    tries = [t for t in _wrong_codes.get(user.id, []) if clock - t < WRONG_WINDOW]
+    if len(tries) >= MAX_WRONG_CODES:
+        _wrong_codes[user.id] = tries
+        return "blocked", []
+    lessons = await db.open_lessons_by_code(user.id, code, now)
+    if not lessons:
+        _wrong_codes[user.id] = tries + [clock]
+        return "wrong", []
+    marked = [lesson for lesson in lessons if await db.mark_attendance(lesson.id, user.id, now)]
+    return ("ok" if marked else "already"), lessons
+
+
+ATTEND_REPLIES = {
+    "wrong": "❌ Bunday kod topilmadi yoki uning muddati tugagan. Kodni tekshirib, qaytadan yuboring.",
+    "blocked": "⏳ Juda ko'p xato urinish. 10 daqiqadan keyin qayta urinib ko'ring.",
+}
+
+
+def attend_reply(status: str, lessons: list[Lesson]) -> str:
+    if status in ATTEND_REPLIES:
+        return ATTEND_REPLIES[status]
+    names = ", ".join(lesson_label(lesson) for lesson in lessons)
+    if status == "already":
+        return f"Siz bu darsda allaqachon qatnashgan deb belgilangansiz: {names}"
+    return f"✅ Davomat qayd etildi: {names}"
+
+
+async def lesson_summary(db: Database, lesson: Lesson, now: datetime) -> str:
+    roster = await db.lesson_roster(lesson)
+    absent = [u for u, present in roster if not present]
+    status = (f"🟢 kod {local(lesson.closes_at):%H:%M} gacha ishlaydi" if lesson.is_open(now) else "kod yopilgan")
+    lines = [f"🎥 <b>{lesson_label(lesson)}</b>", f"Kod: <code>{lesson.code}</code> · {status}",
+             f"Qatnashdi: <b>{len(roster) - len(absent)}</b> / {len(roster)}"]
+    if absent:
+        lines += ["", f"<b>Qatnashmaganlar ({len(absent)}):</b>"]
+        lines += [f"• {escape(u.full_name)} — <code>{u.phone}</code>" for u in absent[:60]]
+    return "\n".join(lines)
+
+
+async def close_lesson(bot: Bot, db: Database, cfg: Config, lesson: Lesson, now: datetime) -> bool:
+    if not await db.close_lesson(lesson.id, now):
+        return False
+    lesson = await db.get_lesson(lesson.id)
+    g = await db.get_group(lesson.group_id)
+    await notify_admins(bot, db, cfg, lesson.group_id,
+                        f"🏁 Jonli dars yakunlandi ({escape(g.name)})\n\n" + await lesson_summary(db, lesson, now))
+    return True

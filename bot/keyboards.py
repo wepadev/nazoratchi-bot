@@ -52,6 +52,12 @@ class MyGroupCb(CallbackData, prefix="mg"):
     group_id: int
 
 
+class LessonCb(CallbackData, prefix="l"):
+    action: str  # open | close | dur | xls
+    lesson_id: int = 0
+    arg: int = 0
+
+
 class AdminCb(CallbackData, prefix="a"):
     action: str  # add | remove
     user_id: int = 0
@@ -85,7 +91,7 @@ def main_menu(is_admin: bool, is_super: bool) -> ReplyKeyboardMarkup:
                     [T.BTN_APPEALS, T.BTN_PROFILE]])
     if is_admin:
         return _kb([[T.BTN_GROUPS, T.BTN_APPEALS], [T.BTN_PROFILE]])
-    return _kb([[T.BTN_TESTS, T.BTN_RATING], [T.BTN_JOIN, T.BTN_MY_GROUPS], [T.BTN_PROFILE]])
+    return _kb([[T.BTN_TESTS, T.BTN_RATING], [T.BTN_ATTEND, T.BTN_JOIN], [T.BTN_MY_GROUPS, T.BTN_PROFILE]])
 
 
 # ---------------- inline klaviaturalar ----------------
@@ -110,7 +116,8 @@ def group_kb(group_id: int, is_super: bool) -> InlineKeyboardMarkup:
     items = [
         ("📝 Testlar", g("tests")), ("🏆 Reyting", g("rating")),
         ("👥 Ustozlar", g("members")), ("🪙 Tanga berish", g("coins")),
-        ("📥 Excel", g("excel")), ("🔄 Yangi kod", g("code")),
+        ("🎥 Jonli dars", g("lessons")), ("📥 Excel", g("excel")),
+        ("🔄 Yangi kod", g("code")),
     ]
     if is_super:
         items += [("👮 Nazoratchilar", g("admins")), ("✏️ Nomi", g("rename")), ("🗑 O'chirish", g("delete"))]
@@ -235,4 +242,31 @@ def my_groups_kb(groups) -> InlineKeyboardMarkup:
 def admins_kb(admins) -> InlineKeyboardMarkup:
     items = [(f"❌ {u.full_name}", AdminCb(action="remove", user_id=u.id)) for u in admins]
     items.append(("➕ Nazoratchi qo'shish", AdminCb(action="add")))
+    return _build(items)
+
+
+def lesson_code_kb() -> ReplyKeyboardMarkup:
+    return _kb([[T.BTN_AUTO_CODE], [T.BTN_CANCEL]])
+
+
+def lesson_duration_kb(labels) -> InlineKeyboardMarkup:
+    return _build([(label, LessonCb(action="dur", arg=m)) for m, label in labels], [2, 2])
+
+
+def lessons_kb(group_id: int, lessons, now) -> InlineKeyboardMarkup:
+    from .timeutil import local
+    items = [("➕ Yangi jonli dars", GroupCb(action="newlesson", group_id=group_id))]
+    items += [(f"{'🟢' if l.is_open(now) else '✅'} {local(l.created_at):%d.%m} · {l.title}",
+               LessonCb(action="open", lesson_id=l.id)) for l in lessons]
+    items += [("📥 Davomat Excel (barcha guruhlar)", LessonCb(action="xls")),
+              (BACK, GroupCb(action="open", group_id=group_id))]
+    return _build(items)
+
+
+def lesson_kb(lesson, now) -> InlineKeyboardMarkup:
+    items = []
+    if lesson.is_open(now):
+        items.append(("⏹ Kodni yopish", LessonCb(action="close", lesson_id=lesson.id)))
+    items += [("🔄 Yangilash", LessonCb(action="open", lesson_id=lesson.id, arg=1)),
+              (BACK, GroupCb(action="lessons", group_id=lesson.group_id))]
     return _build(items)

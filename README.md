@@ -34,6 +34,18 @@ bot avtomatik tekshiradi, tanga beradi va reyting tuzadi.
 - **Nazoratchi:** `+Nomi*kalit`, masalan `+3-hafta: Hosila*abcdabcdab`. PDF yoki rasmni shu matnni izoh
   qilib yuborsa, fayl ham qo'shiladi. Bir nechta guruhi bo'lsa, bot guruhni so'raydi; keyin nashr qilinadi.
 
+## Jonli dars davomati
+
+- Nazoratchi guruh uchun jonli dars ochadi: 4 xonali kodni o'zi yozadi yoki avtomatik oladi, kod qancha ishlashini
+  tanlaydi (30 daqiqa, 1 soat, 2 soat, kun oxirigacha). Bot: 🗂 Guruhlar → guruh → 🎥 Jonli dars. Mini App: guruh → 🎥 Jonli darslar.
+- Dars oxirida kod aytiladi. Ustoz uni botga shunchaki `4821` deb yozadi (yoki «🎥 Davomat» tugmasi, yoki Mini App bosh sahifasi).
+  10 daqiqada 5 tadan ortiq xato kod bloklanadi.
+- Kod yopilganda (muddat tugashi yoki «Kodni yopish») nazoratchiga qatnashganlar soni va qatnashmaganlar ro'yxati keladi.
+- Mini App'da har bir ustozning qatnashmagan kunlari; kodni kirita olmaganlarni nazoratchi qo'lda belgilashi mumkin.
+- Excel: «📥 Davomat Excel» — nazoratchining barcha guruhlari bitta faylda (Umumiy, Darslar, har guruh uchun ustoz × sana).
+  Guruh hisobotida ham «Davomat» varag'i bor.
+- Darsdan keyin guruhga qo'shilganlar o'sha dars uchun qatnashmagan hisoblanmaydi.
+
 ## Tanga va reyting
 
 - Har bir to'g'ri javob: **+1**, topshirmaslik: **−5** (`.env` da o'zgartiriladi).
