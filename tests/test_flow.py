@@ -11,7 +11,7 @@ from io import BytesIO
 from aiogram import Bot, Dispatcher
 from aiogram.client.session.base import BaseSession
 from aiogram.fsm.storage.memory import MemoryStorage
-from aiogram.types import CallbackQuery, Chat, Contact, Message, Update
+from aiogram.types import CallbackQuery, Chat, Contact, Document, Message, PhotoSize, Update
 from aiogram.types import User as TgUser
 from openpyxl import load_workbook
 
@@ -37,9 +37,15 @@ class FakeSession(BaseSession):
         self.sent.append(method)
         name = type(method).__name__
         if name.startswith("Send"):
+            extra = {}
+            if name == "SendDocument":
+                extra["document"] = Document(file_id=f"doc-{len(self.sent)}", file_unique_id=f"u{len(self.sent)}")
+            elif name == "SendPhoto":
+                extra["photo"] = [PhotoSize(file_id=f"photo-{len(self.sent)}", file_unique_id=f"p{len(self.sent)}",
+                                            width=10, height=10)]
             return Message(message_id=len(self.sent), date=dt.datetime.now(),
                            chat=Chat(id=method.chat_id, type="private"),
-                           text=getattr(method, "text", None) or getattr(method, "caption", None) or "")
+                           text=getattr(method, "text", None) or getattr(method, "caption", None) or "", **extra)
         return True
 
     async def stream_content(self, *a, **k):

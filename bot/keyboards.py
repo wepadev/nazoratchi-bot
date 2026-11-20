@@ -177,6 +177,7 @@ def test_kb(test) -> InlineKeyboardMarkup:
                   ("🔑 Kalitni tuzatish", t("fixkey")), ("⏹ Hozir yakunlash", t("close"))]
     else:
         items += [("📊 Statistika", t("stats")), ("🔑 Kalitni tuzatish", t("fixkey"))]
+    items.append(("📎 Faylni almashtirish" if test.file_id else "📎 Fayl qo'shish", t("attach")))
     items.append((BACK, GroupCb(action="tests", group_id=test.group_id)))
     return _build(items, 2)
 

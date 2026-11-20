@@ -613,3 +613,18 @@ async def announce_recording(bot: Bot, db: Database, lesson: Lesson) -> int:
     for m in await db.list_members(lesson.group_id):
         sent += await safe_send(bot, m.id, text, kb.video_kb(lesson.video_url))
     return sent
+
+
+
+# ---------------- test fayli ----------------
+
+async def send_test_file(bot: Bot, db: Database, test: Test, updated: bool = False) -> int:
+    """Nashr qilingan test faylini guruhdagi barcha ustozlarga yuboradi (fayl keyin qo'shilganda/almashtirilganda)."""
+    caption = (f"📎 <b>{escape(test.title)}</b> — test fayli{' (yangilandi)' if updated else ''}\n"
+               f"Kod: <code>{test.id}</code> · {test.n} ta savol\n"
+               f"⚡️ Tez yuborish: <code>{test.id}*abcd...</code>")
+    sent = 0
+    for m in await db.list_members(test.group_id):
+        sub = await db.get_submission(test.id, m.id)
+        sent += await send_test(bot, m.id, test, caption, None if sub else kb.answer_kb(test.id))
+    return sent

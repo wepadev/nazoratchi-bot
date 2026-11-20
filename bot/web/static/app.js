@@ -545,13 +545,15 @@
     const draft = store.get(`newtest:${gid}`);
     if (draft && draft.key) key = draft.key.split("");
     let title = (draft && draft.title) || "";
+    let file = null;  // tanlangan fayl sahifa qayta chizilganda ham saqlanadi
+    const fileLabel = () => (file ? `${file.name} (${(file.size / 1048576).toFixed(1)} MB)` : "Tanlanmagan");
     const draw = () => {
       render(`<div class="h-title">Yangi test</div><div class="h-sub">Kalitni belgilang, keyin nashr qilasiz</div>
         <div class="section"><div class="card">
           <label class="field"><span>Test nomi</span><input class="input" id="title" maxlength="80" placeholder="Masalan: 3-hafta: Hosila" value="${esc(title)}"></label>
           <div class="field"><span>Fayl (PDF yoki rasm, ixtiyoriy)</span>
             <label class="filepick"><input id="file" type="file" accept=".pdf,image/*,.doc,.docx" hidden>
-              <span class="btn ghost">📎 Fayl tanlash</span><span class="fname" id="fname">Tanlanmagan</span></label></div>
+              <span class="btn ghost">📎 Fayl tanlash</span><span class="fname" id="fname">${esc(fileLabel())}</span></label></div>
           <label class="field" style="margin-bottom:0"><span>Savollar soni</span><div class="stepper">
             <button id="minus">−</button><input class="input" id="count" inputmode="numeric" value="${key.length}"><button id="plus">+</button></div></label>
         </div></div>
@@ -569,9 +571,10 @@
       bindKey(document.getElementById("keybox"), key, upd);
       document.getElementById("title").oninput = (e) => { title = e.target.value; saveDraft(); };
       document.getElementById("file").onchange = (e) => {
-        const f = e.target.files[0];
-        document.getElementById("fname").textContent = f ? `${f.name} (${(f.size / 1048576).toFixed(1)} MB)` : "Tanlanmagan";
-        if (f && f.size > 15 * 1048576) { toast("Fayl 15 MB dan katta"); e.target.value = ""; document.getElementById("fname").textContent = "Tanlanmagan"; }
+        const f = e.target.files[0] || null;
+        if (f && f.size > 15 * 1048576) { toast("Fayl 15 MB dan katta"); e.target.value = ""; return; }
+        file = f;
+        document.getElementById("fname").textContent = fileLabel();
       };
       const setCount = (n) => {
         n = Math.max(1, Math.min(200, n || 1));
@@ -593,7 +596,7 @@
         if (missing.length) return toast(`Belgilanmagan: ${missing.slice(0, 8).join(", ")}${missing.length > 8 ? "…" : ""}`);
         const fd = new FormData();
         fd.append("title", title); fd.append("key", key.join(""));
-        const f = document.getElementById("file").files[0];
+        const f = file;
         if (f) fd.append("file", f);
         const btn = document.getElementById("save"); btn.disabled = true; btn.textContent = f ? "Yuklanmoqda…" : "Saqlanmoqda…";
         try {
@@ -655,6 +658,9 @@
       if (t.status === "queued") actions = `<div class="section"><div class="agrid">${abtn("↩️", "Navbatdan olish", `id="unq"`)}${abtn("🔑", "Kalitni o'zgartirish", `data-go="/key/${t.id}"`)}${abtn("🗑", "O'chirish", `id="tdel"`, "danger")}</div></div>`;
       if (t.status === "published") actions = `<div class="section"><div class="agrid">${abtn("📣", "Eslatma yuborish", `id="remind"`)}${abtn("🔑", "Kalitni tuzatish", `data-go="/key/${t.id}"`)}${abtn("⏹", "Hozir yakunlash", `id="closeT"`, "danger")}</div></div>`;
       if (t.status === "closed") actions = `<div class="section"><div class="agrid">${abtn("🔑", "Kalitni tuzatish", `data-go="/key/${t.id}"`)}</div></div>`;
+      actions += `<div class="section"><label class="abtn" style="cursor:pointer"><span class="ai">📎</span>
+        ${t.has_file ? "Test faylini almashtirish" : "Test faylini qo'shish"}<input type="file" id="tfile" accept=".pdf,image/*,.doc,.docx" hidden></label>
+        ${t.status === "published" ? `<p class="note" style="text-align:left">Fayl guruhdagi barcha ustozlarga darhol yuboriladi.</p>` : ""}</div>`;
 
       let stats = "";
       if (live) {
@@ -695,6 +701,18 @@
         $app.querySelectorAll("[data-h]").forEach((x) => x.classList.toggle("on", x === b)); haptic();
       });
       const on = (id, fn) => { const el = document.getElementById(id); if (el) el.onclick = fn; };
+      const tf = document.getElementById("tfile");
+      if (tf) tf.onchange = async (e) => {
+        const f = e.target.files[0];
+        if (!f) return;
+        if (f.size > 15 * 1048576) { e.target.value = ""; return toast("Fayl 15 MB dan katta"); }
+        const fd = new FormData(); fd.append("file", f);
+        toast("Yuklanmoqda…");
+        try {
+          const r = await api(`/api/admin/tests/${id}/file`, { method: "POST", body: fd });
+          haptic("ok"); toast(r.sent ? `📎 Fayl saqlandi va ${r.sent} ta ustozga yuborildi` : "📎 Fayl saqlandi"); reload();
+        } catch (err) { haptic("err"); toast(err.message); }
+      };
       on("pub", async () => {
         const dl = document.getElementById("dl");
         const payload = dl && dl.value ? { deadline: `${dl.value}:00+05:00` } : { hours };

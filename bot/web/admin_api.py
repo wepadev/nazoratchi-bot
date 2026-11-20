@@ -255,10 +255,14 @@ async def _store_file(request: web.Request, field, title: str) -> tuple[str | No
     if (field.content_type or "").startswith("image/") and len(data) < 10 * 1024 * 1024:
         msg = await bot.send_photo(uid, BufferedInputFile(data, filename=name), caption=caption)
         photos = getattr(msg, "photo", None)
-        return (photos[-1].file_id, "photo") if photos else (None, None)
+        if not photos:
+            raise ValueError("Rasmni saqlab bo'lmadi. Qaytadan urinib ko'ring.")
+        return photos[-1].file_id, "photo"
     msg = await bot.send_document(uid, BufferedInputFile(data, filename=name), caption=caption)
     doc = getattr(msg, "document", None)
-    return (doc.file_id, "document") if doc else (None, None)
+    if not doc:
+        raise ValueError("Faylni saqlab bo'lmadi. Qaytadan urinib ko'ring.")
+    return doc.file_id, "document"
 
 
 @admin_only
@@ -411,6 +415,31 @@ async def resolve_appeal(request: web.Request) -> web.Response:
     return web.json_response({"verdict": verdict, "test_id": t.id})
 
 
+@admin_only
+async def attach_file(request: web.Request) -> web.Response:
+    """Mavjud testga faylni qo'shadi yoki almashtiradi; test nashr qilingan bo'lsa — ustozlarga yuboradi."""
+    db = request.app[K_DB]
+    t = await managed_test(request)
+    if not t:
+        return err(403, *NO_ACCESS)
+    form = await request.post()
+    field = form.get("file")
+    if field is None or not hasattr(field, "file"):
+        return err(400, "no_file", "Fayl tanlanmagan.")
+    try:
+        file_id, file_type = await _store_file(request, field, t.title)
+    except ValueError as e:
+        return err(400, "bad_file", str(e))
+    if not file_id:
+        return err(400, "no_file", "Fayl bo'sh.")
+    updated = bool(t.file_id)
+    await db.update_test(t.id, file_id=file_id, file_type=file_type)
+    sent = 0
+    if t.status == "published":
+        sent = await services.send_test_file(request.app[K_BOT], db, await db.get_test(t.id), updated=updated)
+    return web.json_response({"ok": True, "sent": sent})
+
+
 def setup(app: web.Application) -> None:
     r = app.router
     r.add_post("/api/admin/groups", create_group)
@@ -433,6 +462,7 @@ def setup(app: web.Application) -> None:
     r.add_delete(r"/api/admin/tests/{test_id:\d+}", delete_test)
     r.add_post(r"/api/admin/tests/{test_id:\d+}/remind", remind_test)
     r.add_post(r"/api/admin/tests/{test_id:\d+}/key", update_key)
+    r.add_post(r"/api/admin/tests/{test_id:\d+}/file", attach_file)
     r.add_get("/api/admin/appeals", appeals)
     r.add_post(r"/api/admin/appeals/{appeal_id:\d+}", resolve_appeal)
     setup_lessons(app)

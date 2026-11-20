@@ -37,6 +37,7 @@ class TestForm(StatesGroup):
     key = State()
     deadline = State()
     fixkey = State()
+    attach = State()
 
 
 async def test_access(db: Database, test_id: int, user: User, is_super: bool) -> Test | None:
@@ -429,3 +430,55 @@ async def quick_pick_group(call: CallbackQuery, callback_data: kb.GroupCb, state
     await call.message.edit_reply_markup(reply_markup=None)
     await _quick_save(call.message, db, user, callback_data.group_id, data["title"], data["key"],
                       data.get("file_id"), data.get("file_type"))
+
+
+# ---------- faylni keyin qo'shish / almashtirish ----------
+
+@router.callback_query(kb.TestCb.filter(F.action == "attach"))
+async def attach_start(call: CallbackQuery, callback_data: kb.TestCb, state: FSMContext, db: Database,
+                       user: User, is_super: bool):
+    t = await test_access(db, callback_data.test_id, user, is_super)
+    if not t:
+        return await deny(call)
+    await state.set_state(TestForm.attach)
+    await state.update_data(test_id=t.id)
+    await call.answer()
+    note = ("\nTest nashr qilingan — fayl guruhdagi barcha ustozlarga darhol yuboriladi."
+            if t.status == "published" else "")
+    await call.message.answer(f"📎 «{escape(t.title)}» uchun test faylini yuboring (PDF yoki rasm).{note}",
+                              reply_markup=kb.cancel_kb())
+
+
+async def _attach_finish(message: Message, state: FSMContext, db: Database, bot: Bot, user: User,
+                         is_admin: bool, is_super: bool, file_id: str, file_type: str):
+    data = await state.get_data()
+    t = await test_access(db, data.get("test_id", 0), user, is_super)
+    await state.clear()
+    if not t:
+        return await message.answer(T.NOT_FOUND, reply_markup=menu(is_admin, is_super))
+    updated = bool(t.file_id)
+    await db.update_test(t.id, file_id=file_id, file_type=file_type)
+    t = await db.get_test(t.id)
+    text = "📎 Fayl saqlandi."
+    if t.status == "published":
+        sent = await services.send_test_file(bot, db, t, updated=updated)
+        text += f" {sent} ta ustozga yuborildi."
+    await message.answer(text, reply_markup=menu(is_admin, is_super))
+    await message.answer((await card_text(db, t))[:4000], reply_markup=kb.test_kb(t))
+
+
+@router.message(TestForm.attach, F.document)
+async def attach_document(message: Message, state: FSMContext, db: Database, bot: Bot, user: User,
+                          is_admin: bool, is_super: bool):
+    await _attach_finish(message, state, db, bot, user, is_admin, is_super, message.document.file_id, "document")
+
+
+@router.message(TestForm.attach, F.photo)
+async def attach_photo(message: Message, state: FSMContext, db: Database, bot: Bot, user: User,
+                       is_admin: bool, is_super: bool):
+    await _attach_finish(message, state, db, bot, user, is_admin, is_super, message.photo[-1].file_id, "photo")
+
+
+@router.message(TestForm.attach)
+async def attach_wrong(message: Message):
+    await message.answer("Fayl yuboring: PDF (hujjat sifatida) yoki rasm. Bekor qilish — «✖️ Bekor qilish».")
