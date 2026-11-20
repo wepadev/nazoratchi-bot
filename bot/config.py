@@ -16,7 +16,7 @@ class Config:
     quiet_hours: tuple[int, int] = (23, 7)    # tunda eslatma yuborilmaydi (Toshkent vaqti)
     penalty_not_submitted: int = 5            # topshirmaganlik uchun ayiriladigan tanga
     coins_per_correct: int = 1
-    coins_per_lesson: int = 1                 # jonli darsda qatnashgani uchun
+    coins_per_lesson: int = 5                 # jonli darsda qatnashgani uchun
     penalty_missed_lesson: int = 5            # jonli darsni qoldirgani uchun
     weekly_rating_weekday: int = 0            # 0 = dushanba
     weekly_rating_hour: int = 9
@@ -48,7 +48,7 @@ def load_config() -> Config:
         quiet_hours=_quiet(os.getenv("QUIET_HOURS", "23-7")),
         penalty_not_submitted=int(os.getenv("PENALTY_NOT_SUBMITTED", "5")),
         coins_per_correct=int(os.getenv("COINS_PER_CORRECT", "1")),
-        coins_per_lesson=int(os.getenv("COINS_PER_LESSON", "1")),
+        coins_per_lesson=int(os.getenv("COINS_PER_LESSON", "5")),
         penalty_missed_lesson=int(os.getenv("PENALTY_MISSED_LESSON", "5")),
         weekly_rating_hour=int(os.getenv("WEEKLY_RATING_HOUR", "9")),
         web_port=int(os.getenv("PORT", "8080")),
