@@ -390,10 +390,14 @@ class Database:
                                     (group_id, admin_id)))
 
     # ---- a'zolar (ustozlar) ----
-    async def add_member(self, group_id: int, user_id: int, now: datetime) -> bool:
+    async def add_member(self, group_id: int, user_id: int, now: datetime, exclusive: bool = True) -> bool:
+        """Qo'shilsa True. exclusive: ustoz boshqa guruhda bo'lsa qo'shilmaydi (bir vaqtda faqat bitta guruh)
+        — tekshiruv va yozuv bitta so'rovda, shuning uchun bir vaqtda kelgan ikki so'rov ham chetlab o'tolmaydi."""
+        guard = " AND NOT EXISTS (SELECT 1 FROM group_members WHERE user_id = ?)" if exclusive else ""
+        params = (group_id, user_id, to_db(now)) + ((user_id,) if exclusive else ())
         cur = await self._exec(
-            "INSERT OR IGNORE INTO group_members (group_id, user_id, joined_at) VALUES (?, ?, ?)",
-            (group_id, user_id, to_db(now)))
+            "INSERT OR IGNORE INTO group_members (group_id, user_id, joined_at) SELECT ?, ?, ? WHERE 1" + guard,
+            params)
         return cur.rowcount > 0
 
     async def remove_member(self, group_id: int, user_id: int) -> None:

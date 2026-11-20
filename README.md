@@ -16,6 +16,8 @@ bot avtomatik tekshiradi, tanga beradi va reyting tuzadi.
 
 1. Bosh admin: **🆕 Guruh yaratish** → nazoratchilarni belgilaydi. Guruh kodi ustozlarga beriladi.
 2. Ustoz: **➕ Guruhga qo'shilish** → kodni kiritadi.
+   Ustoz bir vaqtda **faqat bitta guruhda** bo'ladi: boshqasiga o'tish uchun avval 📚 Guruhlarim → 🚪 Chiqish
+   (chiqqanda nazoratchiga xabar boradi). Qoida bazaning o'zida tekshiriladi.
 3. Nazoratchi: **🗂 Guruhlar → guruh → 📝 Testlar → ➕ Yangi test** → nom → fayl (PDF/rasm, ixtiyoriy) → kalit (`abcd...` yoki `1a 2b ...`).
 4. **🚀 Nashr qilish** → muddat (12 soat … 1 hafta yoki aniq sana). Guruhda bir vaqtda **bitta** faol test bo'ladi;
    agar faol test bo'lsa, yangisi **navbatga** qo'yiladi va oldingisi yakunlanishi bilan avtomatik nashr qilinadi.

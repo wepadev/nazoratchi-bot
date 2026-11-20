@@ -47,8 +47,9 @@ def test_quick_flow():
         await db.create_user(U, "998900000301", "Ustoz", None)
         g1 = await db.create_group("G1", SUPER)
         g2 = await db.create_group("G2", SUPER)
+        # eski ma'lumotlar: qoida kiritilishidan oldin ikki guruhga qo'shilgan ustoz ham ishlashi kerak
         for g in (g1, g2):
-            await db.add_member(g.id, U, now - timedelta(days=1))
+            await db.add_member(g.id, U, now - timedelta(days=1), exclusive=False)
 
         # --- nazoratchi: tez yaratish (2 ta guruh -> tanlash) ---
         out = await say(SUPER, "+Tez test*abcd")

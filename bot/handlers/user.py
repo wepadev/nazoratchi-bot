@@ -43,7 +43,10 @@ class Attend(StatesGroup):
 # ---------------- guruhga qo'shilish ----------------
 
 @router.message(F.text == T.BTN_JOIN)
-async def join_start(message: Message, state: FSMContext):
+async def join_start(message: Message, state: FSMContext, db: Database, user: User):
+    current = await db.user_groups(user.id)
+    if current:  # bir vaqtda faqat bitta guruh
+        return await message.answer(T.IN_OTHER_GROUP(escape(current[0].name)))
     await state.set_state(Join.code)
     await message.answer(T.ASK_CODE, reply_markup=kb.cancel_kb())
 
@@ -56,6 +59,11 @@ async def join_code(message: Message, state: FSMContext, db: Database, bot: Bot,
         return await message.answer(T.CODE_NOT_FOUND)
     await state.clear()
     added = await db.add_member(group.id, user.id, utcnow())
+    if not added:
+        current = await db.user_groups(user.id)
+        other = next((g for g in current if g.id != group.id), None)
+        if other:
+            return await message.answer(T.IN_OTHER_GROUP(escape(other.name)), reply_markup=menu(is_admin, is_super))
     text = (T.JOINED if added else T.ALREADY_MEMBER).format(name=escape(group.name))
     active = await db.active_test(group.id)
     if added and active:
@@ -87,11 +95,17 @@ async def leave_ask(call: CallbackQuery, callback_data: kb.MyGroupCb, db: Databa
 
 
 @router.callback_query(kb.MyGroupCb.filter(F.action == "leave_ok"))
-async def leave(call: CallbackQuery, callback_data: kb.MyGroupCb, db: Database, user: User):
+async def leave(call: CallbackQuery, callback_data: kb.MyGroupCb, db: Database, bot: Bot, config: Config,
+                user: User):
     g = await db.get_group(callback_data.group_id)
+    was_member = await db.is_member(callback_data.group_id, user.id)
     await db.remove_member(callback_data.group_id, user.id)
     await call.answer()
-    await call.message.edit_text(T.LEFT_GROUP.format(name=escape(g.name) if g else "—"))
+    await call.message.edit_text(T.LEFT_GROUP.format(name=escape(g.name) if g else "—")
+                                 + "\n\nEndi boshqa guruh kodini kiritishingiz mumkin: «" + T.BTN_JOIN + "».")
+    if g and was_member:
+        await services.notify_admins(bot, db, config, g.id, T.MEMBER_LEFT_NOTIFY.format(
+            group=escape(g.name), name=escape(user.full_name), phone=user.phone))
 
 
 # ---------------- testlar ----------------

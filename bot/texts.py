@@ -38,6 +38,9 @@ ASK_CODE = "Nazoratchi bergan <b>guruh kodini</b> yuboring.\n\nMasalan: <code>K7
 CODE_NOT_FOUND = "❌ Bunday kod topilmadi. Kodni tekshirib, qaytadan yuboring."
 JOINED = "🎉 Siz <b>{name}</b> guruhiga qo'shildingiz!"
 ALREADY_MEMBER = "Siz allaqachon <b>{name}</b> guruhi a'zosisiz."
+IN_OTHER_GROUP_TPL = ("Siz <b>{name}</b> guruhidasiz. Bir vaqtda faqat bitta guruhda bo'lish mumkin.\n\n"
+                  "Boshqa guruhga o'tish uchun avval chiqing: «{btn}» → «🚪 Chiqish», keyin yangi kodni kiriting.")
+MEMBER_LEFT_NOTIFY = "🚪 <b>{group}</b> guruhidan chiqdi: {name} ({phone})"
 NO_GROUPS_USER = "Siz hali hech qaysi guruhga qo'shilmagansiz.\n«{btn}» tugmasini bosing.".format(btn=BTN_JOIN)
 LEFT_GROUP = "Siz <b>{name}</b> guruhidan chiqdingiz."
 CONFIRM_LEAVE = ("⚠️ <b>{name}</b> guruhidan chiqasizmi?\n"
@@ -106,3 +109,7 @@ ASK_LESSON_CODE = ("🎥 Yangi jonli dars.\n\nDars oxirida aytiladigan <b>4 xona
 BAD_LESSON_CODE = "Kod aynan 4 ta raqamdan iborat bo'lishi kerak, masalan <code>4821</code>."
 LESSON_CODE_BUSY = "Bu guruhda shu kod bilan ochiq dars bor. Boshqa kod tanlang."
 ASK_LESSON_DURATION = "Kod <code>{code}</code>. Qancha vaqt ishlasin?"
+
+
+def IN_OTHER_GROUP(name: str) -> str:  # noqa: N802 — boshqa matn konstantalari bilan bir xil ko'rinishda
+    return IN_OTHER_GROUP_TPL.format(name=name, btn=BTN_MY_GROUPS)
