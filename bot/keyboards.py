@@ -172,6 +172,9 @@ def test_kb(test) -> InlineKeyboardMarkup:
         items += [("🚀 Nashr qilish", t("publish")), ("🗑 O'chirish", t("delete"))]
     elif test.status == "queued":
         items += [("↩️ Navbatdan olish", t("unqueue")), ("🗑 O'chirish", t("delete"))]
+    elif test.status == "scheduled":
+        items += [("🚀 Hozir nashr qilish", t("pubnow")), ("✏️ Vaqtni o'zgartirish", t("sched")),
+                  ("↩️ Rejani bekor qilish", t("unqueue")), ("🗑 O'chirish", t("delete"))]
     elif test.status == "published":
         items += [("📊 Statistika", t("stats")), ("📣 Qayta yuborish", t("resend")),
                   ("🔑 Kalitni tuzatish", t("fixkey")), ("⏹ Hozir yakunlash", t("close"))]
@@ -188,8 +191,15 @@ DURATIONS = [(0, "♾ Muddatsiz"), (24, "1 kun"), (48, "2 kun"), (72, "3 kun"), 
 def publish_kb(test_id: int) -> InlineKeyboardMarkup:
     items = [(label, TestCb(action="pub", test_id=test_id, arg=h)) for h, label in DURATIONS]
     items.append(("📅 Aniq sana", TestCb(action="date", test_id=test_id)))
+    items.append(("⏰ Keyinroq nashr qilish (vaqt bilan)", TestCb(action="sched", test_id=test_id)))
     items.append((BACK, TestCb(action="open", test_id=test_id)))
-    return _build(items, [1, 2, 2, 1, 1])
+    return _build(items, [1, 2, 2, 1, 1, 1])
+
+
+def schedule_duration_kb(test_id: int) -> InlineKeyboardMarkup:
+    items = [(label, TestCb(action="schedd", test_id=test_id, arg=h)) for h, label in DURATIONS]
+    items.append((BACK, TestCb(action="open", test_id=test_id)))
+    return _build(items, [1, 2, 2, 1])
 
 
 def confirm_kb(yes: tuple[str, CallbackData], no: tuple[str, CallbackData]) -> InlineKeyboardMarkup:

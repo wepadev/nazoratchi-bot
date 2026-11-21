@@ -21,6 +21,9 @@ bot avtomatik tekshiradi, tanga beradi va reyting tuzadi.
 3. Nazoratchi: **🗂 Guruhlar → guruh → 📝 Testlar → ➕ Yangi test** → nom → fayl (PDF/rasm, ixtiyoriy) → kalit (`abcd...` yoki `1a 2b ...`).
 4. **🚀 Nashr qilish** → **♾ Muddatsiz** (standart) yoki muddat (1 kun … 1 hafta, aniq sana). Bir guruhda bir vaqtda
    **bir nechta** test faol bo'lishi mumkin. Muddatsiz test nazoratchi **Hozir yakunlash** ni bosmaguncha faol turadi.
+   **⏰ Rejalashtirish:** nashr vaqtini oldindan belgilash mumkin (bot: «⏰ Keyinroq nashr qilish»; Mini App: «Hozir /
+   Rejalashtirish»). Belgilangan vaqtda bot testni o'zi nashr qiladi; undan oldin «Hozir nashr qilish», vaqtni
+   o'zgartirish, rejani bekor qilish yoki o'chirish mumkin.
 5. Ustozlar **✍️ Javob yuborish** → javoblar → tasdiqlash. Bot darhol natijani aytadi (`27/30`), javob faqat bir marta qabul qilinadi.
 6. Eslatmalar har **3 soatda** (tunda emas): muddatli testda har test bo'yicha, muddatsiz testlarda har bir ustozga
    **bitta umumiy** xabar; muddatli testda muddatdan **1 soat** oldin oxirgi eslatma. Matnlar motivatsion va **har safar

@@ -1,5 +1,5 @@
 """Nazoratchi: test yaratish (kalit bilan), navbat bilan nashr qilish, statistika, kalitni tuzatish."""
-from datetime import timedelta
+from datetime import datetime, timedelta
 from html import escape
 
 from aiogram import Bot, F, Router
@@ -24,7 +24,8 @@ router = Router(name="tests_admin")
 router.message.filter(Registered(), IsAdmin())
 router.callback_query.filter(Registered(), IsAdmin())
 
-STATUS = {"draft": "📄 Qoralama", "queued": "⏳ Navbatda", "published": "🟢 Faol", "closed": "✅ Yakunlangan"}
+STATUS = {"draft": "📄 Qoralama", "scheduled": "⏰ Rejalashtirilgan", "queued": "⏳ Navbatda", "published": "🟢 Faol",
+          "closed": "✅ Yakunlangan"}
 
 
 class QuickTest(StatesGroup):
@@ -38,6 +39,7 @@ class TestForm(StatesGroup):
     deadline = State()
     fixkey = State()
     attach = State()
+    sched_at = State()
 
 
 async def test_access(db: Database, test_id: int, user: User, is_super: bool) -> Test | None:
@@ -53,6 +55,8 @@ async def card_text(db: Database, t: Test) -> str:
              f"Fayl: {'bor' if t.file_id else 'yo‘q'}"]
     if t.status == "queued":
         lines.append(f"Davomiyligi: {t.queue_hours} soat (oldingi test yakunlangach avtomatik nashr qilinadi)")
+    if t.status == "scheduled":
+        lines.append(services.schedule_summary(t))
     if t.published_at:
         lines.append(f"Nashr: {fmt(t.published_at)}")
         if t.deadline_at:
@@ -241,7 +245,7 @@ async def unqueue(call: CallbackQuery, callback_data: kb.TestCb, db: Database, u
     if not t:
         return await deny(call)
     await db.unqueue_test(t.id)
-    await call.answer("Navbatdan olindi")
+    await call.answer("Bekor qilindi — test qoralamaga qaytdi")
     await show_test(call, db, await db.get_test(t.id))
 
 
@@ -482,3 +486,65 @@ async def attach_photo(message: Message, state: FSMContext, db: Database, bot: B
 @router.message(TestForm.attach)
 async def attach_wrong(message: Message):
     await message.answer("Fayl yuboring: PDF (hujjat sifatida) yoki rasm. Bekor qilish — «✖️ Bekor qilish».")
+
+
+# ---------- rejalashtirilgan nashr ----------
+
+@router.callback_query(kb.TestCb.filter(F.action == "sched"))
+async def sched_start(call: CallbackQuery, callback_data: kb.TestCb, state: FSMContext, db: Database,
+                      user: User, is_super: bool):
+    t = await test_access(db, callback_data.test_id, user, is_super)
+    if not t or t.status not in ("draft", "scheduled"):
+        return await deny(call)
+    await state.set_state(TestForm.sched_at)
+    await state.update_data(test_id=t.id)
+    await call.answer()
+    await call.message.answer(
+        f"⏰ «{escape(t.title)}» qachon nashr qilinsin? Toshkent vaqti bilan yozing:\n"
+        "<code>25.11 09:00</code> yoki <code>25.11.2026 09:00</code>", reply_markup=kb.cancel_kb())
+
+
+@router.message(TestForm.sched_at, F.text)
+async def sched_time(message: Message, state: FSMContext, db: Database, user: User, is_super: bool):
+    now = utcnow()
+    when = parse_local(message.text, now)
+    if not when or when < now + timedelta(minutes=1):
+        return await message.answer("Vaqt noto'g'ri yoki o'tib ketgan. Masalan: <code>25.11 09:00</code>")
+    data = await state.get_data()
+    t = await test_access(db, data.get("test_id", 0), user, is_super)
+    if not t:
+        await state.clear()
+        return await message.answer(T.NOT_FOUND)
+    await state.update_data(publish_at=when.isoformat())
+    await message.answer(f"Nashr vaqti: <b>{fmt(when)}</b>. Endi test muddatini tanlang:",
+                         reply_markup=kb.schedule_duration_kb(t.id))
+
+
+@router.callback_query(TestForm.sched_at, kb.TestCb.filter(F.action == "schedd"))
+async def sched_duration(call: CallbackQuery, callback_data: kb.TestCb, state: FSMContext, db: Database,
+                         user: User, is_admin: bool, is_super: bool):
+    data = await state.get_data()
+    t = await test_access(db, callback_data.test_id, user, is_super)
+    if not t or data.get("test_id") != t.id or "publish_at" not in data:
+        return await deny(call)
+    await state.clear()
+    when = datetime.fromisoformat(data["publish_at"])
+    if when < utcnow():
+        await call.answer("Vaqt o'tib ketdi, qaytadan tanlang.", show_alert=True)
+        return
+    await db.schedule_test(t.id, when, callback_data.arg, None)
+    await call.answer("Rejalashtirildi ⏰")
+    await call.message.answer(T.MAIN_MENU, reply_markup=menu(is_admin, is_super))
+    await call.message.answer((await card_text(db, await db.get_test(t.id)))[:4000],
+                              reply_markup=kb.test_kb(await db.get_test(t.id)))
+
+
+@router.callback_query(kb.TestCb.filter(F.action == "pubnow"))
+async def publish_now(call: CallbackQuery, callback_data: kb.TestCb, db: Database, bot: Bot, config: Config,
+                      user: User, is_super: bool):
+    t = await test_access(db, callback_data.test_id, user, is_super)
+    if not t or t.status != "scheduled":
+        return await deny(call)
+    await call.answer("Nashr qilinmoqda…")
+    await services.publish_scheduled(bot, db, config, t, utcnow())
+    await show_test(call, db, await db.get_test(t.id))

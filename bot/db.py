@@ -54,7 +54,7 @@ CREATE TABLE IF NOT EXISTS tests (
     answer_key      TEXT    NOT NULL,                 -- 'ABCD...'
     file_id         TEXT,
     file_type       TEXT,                             -- 'document' | 'photo'
-    status          TEXT    NOT NULL DEFAULT 'draft', -- draft | queued | published | closed
+    status          TEXT    NOT NULL DEFAULT 'draft', -- draft | scheduled | queued | published | closed
     queue_hours     INTEGER,                          -- navbatdagi test uchun davomiylik
     queued_at       TEXT,
     created_by      INTEGER NOT NULL,
@@ -63,7 +63,8 @@ CREATE TABLE IF NOT EXISTS tests (
     deadline_at     TEXT,
     reminded_at     TEXT,
     final_reminded  INTEGER NOT NULL DEFAULT 0,
-    closed_at       TEXT
+    closed_at       TEXT,
+    publish_at      TEXT                              -- rejalashtirilgan nashr vaqti (status='scheduled')
 );
 CREATE INDEX IF NOT EXISTS idx_tests_group ON tests(group_id, status);
 
@@ -179,6 +180,7 @@ class Test:
     reminded_at: datetime | None
     final_reminded: bool
     closed_at: datetime | None
+    publish_at: datetime | None = None
 
     @property
     def n(self) -> int:
@@ -231,7 +233,7 @@ def _lesson(row) -> Lesson:
         d[k] = from_db(d[k])
     return Lesson(**d)
 _TEST_COLS = ("id, group_id, title, answer_key, file_id, file_type, status, queue_hours, created_by, "
-              "published_at, deadline_at, reminded_at, final_reminded, closed_at")
+              "published_at, deadline_at, reminded_at, final_reminded, closed_at, publish_at")
 
 
 def _user(row) -> User:
@@ -241,7 +243,7 @@ def _user(row) -> User:
 
 def _test(row) -> Test:
     d = dict(row)
-    for k in ("published_at", "deadline_at", "reminded_at", "closed_at"):
+    for k in ("published_at", "deadline_at", "reminded_at", "closed_at", "publish_at"):
         d[k] = from_db(d[k])
     d["final_reminded"] = bool(d["final_reminded"])
     return Test(**{k: d[k] for k in Test.__dataclass_fields__})
@@ -269,6 +271,9 @@ class Database:
         if "lesson_id" not in cols:
             await self._conn.execute(
                 "ALTER TABLE coins ADD COLUMN lesson_id INTEGER REFERENCES lessons(id) ON DELETE SET NULL")
+        cur = await self._conn.execute("PRAGMA table_info(tests)")
+        if "publish_at" not in {r["name"] for r in await cur.fetchall()}:
+            await self._conn.execute("ALTER TABLE tests ADD COLUMN publish_at TEXT")
         cur = await self._conn.execute("PRAGMA table_info(lessons)")
         if "video_url" not in {r["name"] for r in await cur.fetchall()}:
             await self._conn.execute("ALTER TABLE lessons ADD COLUMN video_url TEXT")
@@ -442,7 +447,8 @@ class Database:
     async def list_tests(self, group_id: int, limit: int = 30) -> list[Test]:
         rows = await self._all(
             f"""SELECT {_TEST_COLS} FROM tests WHERE group_id = ?
-                ORDER BY CASE status WHEN 'published' THEN 0 WHEN 'queued' THEN 1 WHEN 'draft' THEN 2 ELSE 3 END,
+                ORDER BY CASE status WHEN 'published' THEN 0 WHEN 'scheduled' THEN 1 WHEN 'queued' THEN 1
+                                     WHEN 'draft' THEN 2 ELSE 3 END,
                          COALESCE(queued_at, published_at, created_at) DESC, id DESC LIMIT ?""",
             (group_id, limit))
         return [_test(r) for r in rows]
@@ -469,14 +475,29 @@ class Database:
                          (hours, to_db(now), test_id))
 
     async def unqueue_test(self, test_id: int) -> None:
-        await self._exec("UPDATE tests SET status='draft', queue_hours=NULL, queued_at=NULL "
-                         "WHERE id=? AND status='queued'", (test_id,))
+        """Navbat yoki rejani bekor qiladi — test qoralamaga qaytadi."""
+        await self._exec("UPDATE tests SET status='draft', queue_hours=NULL, queued_at=NULL, publish_at=NULL, "
+                         "deadline_at=NULL WHERE id=? AND status IN ('queued','scheduled')", (test_id,))
+
+    async def schedule_test(self, test_id: int, publish_at: datetime, hours: int | None,
+                            deadline: datetime | None) -> bool:
+        """Belgilangan vaqtda avtomatik nashr: hours (0/None — muddatsiz) yoki aniq deadline."""
+        cur = await self._exec(
+            "UPDATE tests SET status='scheduled', publish_at=?, queue_hours=?, deadline_at=? "
+            "WHERE id=? AND status IN ('draft','scheduled')",
+            (to_db(publish_at), hours or None, to_db(deadline) if deadline else None, test_id))
+        return cur.rowcount > 0
+
+    async def due_scheduled(self, now: datetime) -> list[Test]:
+        rows = await self._all(f"SELECT {_TEST_COLS} FROM tests WHERE status='scheduled' AND publish_at <= ?",
+                               (to_db(now),))
+        return [_test(r) for r in rows]
 
     async def publish_test(self, test_id: int, now: datetime, deadline: datetime | None) -> bool:
         """deadline=None — muddatsiz test (nazoratchi yakunlamaguncha faol). Bir guruhda bir nechta faol test bo'lishi mumkin."""
         cur = await self._exec(
-            """UPDATE tests SET status='published', published_at=?, deadline_at=?, reminded_at=?
-               WHERE id=? AND status IN ('draft','queued')""",
+            """UPDATE tests SET status='published', published_at=?, deadline_at=?, reminded_at=?, publish_at=NULL
+               WHERE id=? AND status IN ('draft','queued','scheduled')""",
             (to_db(now), to_db(deadline) if deadline else None, to_db(now), test_id))
         return cur.rowcount > 0
 
@@ -513,7 +534,7 @@ class Database:
         await self._exec(f"UPDATE tests SET {sets} WHERE id = ?", (*values, test_id))
 
     async def delete_test(self, test_id: int) -> None:
-        await self._exec("DELETE FROM tests WHERE id = ? AND status IN ('draft','queued')", (test_id,))
+        await self._exec("DELETE FROM tests WHERE id = ? AND status IN ('draft','queued','scheduled')", (test_id,))
 
     async def user_open_tests(self, user_id: int) -> list[Test]:
         """Foydalanuvchi guruhlaridagi faol testlar (topshirilgan-topshirilmaganidan qat'i nazar)."""

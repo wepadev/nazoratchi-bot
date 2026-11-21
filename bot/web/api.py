@@ -65,7 +65,8 @@ async def can_manage(db: Database, request: web.Request, group_id: int) -> bool:
 
 def test_brief(t: Test) -> dict:
     return {"id": t.id, "title": t.title, "n": t.n, "status": t.status,
-            "published_at": iso(t.published_at), "deadline_at": iso(t.deadline_at), "closed_at": iso(t.closed_at)}
+            "published_at": iso(t.published_at), "deadline_at": iso(t.deadline_at), "closed_at": iso(t.closed_at),
+            "publish_at": iso(t.publish_at), "queue_hours": t.queue_hours}
 
 
 # ---------------- umumiy ----------------

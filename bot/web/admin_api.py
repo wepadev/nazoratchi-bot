@@ -293,18 +293,28 @@ async def create_test(request: web.Request) -> web.Response:
 async def publish_test(request: web.Request) -> web.Response:
     db, bot, cfg = request.app[K_DB], request.app[K_BOT], request.app[K_CFG]
     t = await managed_test(request)
-    if not t or t.status != "draft":
-        return err(409, "bad_state", "Faqat qoralama testni nashr qilish mumkin.")
     data = await body(request)
+    scheduling = bool(data.get("publish_at"))
+    if not t or t.status not in (("draft", "scheduled") if scheduling else ("draft",)):
+        return err(409, "bad_state", "Faqat qoralama testni nashr qilish mumkin.")
     now = utcnow()
+    publish_at = None
+    if scheduling:  # oldindan rejalashtirish
+        try:
+            publish_at = datetime.fromisoformat(str(data["publish_at"]))
+        except ValueError:
+            publish_at = None
+        if not publish_at or publish_at.tzinfo is None or publish_at < now + timedelta(minutes=1):
+            return err(400, "bad_publish_at", "Nashr vaqti kelajakda bo'lishi kerak.")
+    start = publish_at or now
     hours, deadline = data.get("hours"), None
     if data.get("deadline"):
         try:
             deadline = datetime.fromisoformat(str(data["deadline"]))
         except ValueError:
             deadline = None
-        if not deadline or deadline.tzinfo is None or deadline < now + timedelta(minutes=30):
-            return err(400, "bad_deadline", "Muddat kamida 30 daqiqadan keyin bo'lishi kerak.")
+        if not deadline or deadline.tzinfo is None or deadline < start + timedelta(minutes=30):
+            return err(400, "bad_deadline", "Muddat nashrdan kamida 30 daqiqa keyin bo'lishi kerak.")
         hours = None
     else:
         try:
@@ -313,10 +323,23 @@ async def publish_test(request: web.Request) -> web.Response:
             hours = -1
         if not 0 <= hours <= 24 * 31:
             return err(400, "bad_hours", "Davomiylikni tanlang.")
+    if publish_at:
+        await db.schedule_test(t.id, publish_at, hours, deadline)
+        return web.json_response({"result": "scheduled"})
     result = await services.publish_or_queue(bot, db, cfg, t, now, hours=hours, deadline=deadline)
     if result != "published":
         return err(409, "bad_state", "Test allaqachon nashr qilingan.")
     return web.json_response({"result": result})
+
+
+@admin_only
+async def publish_now(request: web.Request) -> web.Response:
+    """Rejalashtirilgan testni kutmasdan hozir nashr qiladi (tanlangan muddat bilan)."""
+    t = await managed_test(request)
+    if not t or t.status != "scheduled":
+        return err(409, "bad_state", "Test rejalashtirilmagan.")
+    await services.publish_scheduled(request.app[K_BOT], request.app[K_DB], request.app[K_CFG], t, utcnow())
+    return web.json_response({"result": "published"})
 
 
 @admin_only
@@ -458,6 +481,7 @@ def setup(app: web.Application) -> None:
     r.add_delete(r"/api/admin/staff/{user_id:\d+}", remove_staff)
     r.add_post(r"/api/admin/tests/{test_id:\d+}/publish", publish_test)
     r.add_post(r"/api/admin/tests/{test_id:\d+}/unqueue", unqueue_test)
+    r.add_post(r"/api/admin/tests/{test_id:\d+}/publish_now", publish_now)
     r.add_post(r"/api/admin/tests/{test_id:\d+}/close", close_test)
     r.add_delete(r"/api/admin/tests/{test_id:\d+}", delete_test)
     r.add_post(r"/api/admin/tests/{test_id:\d+}/remind", remind_test)

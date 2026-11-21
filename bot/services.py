@@ -658,3 +658,27 @@ async def resync_lesson_coins(db: Database, cfg: Config, now: datetime) -> int:
                 if await sync_lesson_coins(db, cfg, lesson, u.id, now, note="tanga qoidasi yangilandi"):
                     changed += 1
     return changed
+
+
+
+# ---------------- rejalashtirilgan nashr ----------------
+
+def scheduled_deadline(test: Test, now: datetime) -> datetime | None:
+    """Rejalangan test nashr bo'lganda qo'llanadigan muddat: aniq sana yoki nashrdan keyin N soat (yo'q — muddatsiz)."""
+    if test.deadline_at:
+        return test.deadline_at if test.deadline_at > now else None
+    return now + timedelta(hours=test.queue_hours) if test.queue_hours else None
+
+
+async def publish_scheduled(bot: Bot, db: Database, cfg: Config, test: Test, now: datetime) -> bool:
+    return await publish(bot, db, cfg, test, scheduled_deadline(test, now), now)
+
+
+def schedule_summary(test: Test) -> str:
+    if test.deadline_at:
+        dur = f"muddat {fmt(test.deadline_at)} gacha"
+    elif test.queue_hours:
+        dur = f"muddat nashrdan keyin {test.queue_hours} soat"
+    else:
+        dur = "♾ muddatsiz"
+    return f"⏰ {fmt(test.publish_at)} da avtomatik nashr qilinadi · {dur}"

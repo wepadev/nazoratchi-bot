@@ -15,6 +15,8 @@ TICK_SECONDS = 30
 
 
 async def tick(bot: Bot, db: Database, cfg: Config, now: datetime) -> None:
+    for test in await db.due_scheduled(now):  # rejalashtirilgan nashrlar
+        await services.publish_scheduled(bot, db, cfg, test, now)
     for test in await db.due_tests(now):
         await services.close(bot, db, cfg, test, now)
     for lesson in await db.due_lessons(now):

@@ -337,7 +337,7 @@
   // ================= NAZORATCHI =================
   const post = (path, data) => api(path, { method: "POST", body: JSON.stringify(data || {}) });
   const del = (path) => api(path, { method: "DELETE" });
-  const STATUS = { draft: ["muted", "Qoralama"], queued: ["accent", "Navbatda"], published: ["brand", "Faol"], closed: ["ok", "Yakunlangan"] };
+  const STATUS = { draft: ["muted", "Qoralama"], scheduled: ["accent", "Rejalashtirilgan"], queued: ["accent", "Navbatda"], published: ["brand", "Faol"], closed: ["ok", "Yakunlangan"] };
   const DURATIONS = [[0, "♾ Muddatsiz"], [24, "1 kun"], [48, "2 kun"], [72, "3 kun"], [168, "1 hafta"]];
   const abtn = (icon, label, attrs, extra = "") => `<button class="abtn ${extra}" ${attrs}><span class="ai">${icon}</span>${label}</button>`;
 
@@ -636,6 +636,11 @@
     };
   }
 
+  function scheduleText(t) {
+    const dur = t.deadline_at ? `muddat ${fmtDate(t.deadline_at)} gacha` : t.queue_hours ? `nashrdan keyin ${t.queue_hours} soat` : "♾ muddatsiz";
+    return `⏰ <b>${fmtDate(t.publish_at)}</b> da avtomatik nashr qilinadi · ${dur}`;
+  }
+
   // ---------- test sahifasi (nazoratchi) ----------
   async function adminTest(id) {
     const t = await api(`/api/admin/tests/${id}`);
@@ -644,12 +649,16 @@
     let selected = null;
     let hours = 0;
 
+    let mode = "now";  // now | later
     const publishBlock = () => `<div class="section"><div class="card">
       <div class="title" style="font-weight:700;margin-bottom:10px">🚀 Nashr qilish</div>
+      <div class="seg" style="margin-bottom:14px"><button data-mode="now" class="${mode === "now" ? "on" : ""}">Hozir</button>
+        <button data-mode="later" class="${mode === "later" ? "on" : ""}">⏰ Rejalashtirish</button></div>
+      ${mode === "later" ? `<label class="field"><span>Nashr vaqti (Toshkent vaqti)</span><input class="input" id="pat" type="datetime-local"></label>` : ""}
       <div class="field"><span>Muddat</span><div class="chips">${DURATIONS.map(([h, l]) =>
         `<button class="pick ${h === hours ? "on" : ""}" data-h="${h}">${l}</button>`).join("")}</div></div>
       <label class="field"><span>Yoki aniq muddat (Toshkent vaqti)</span><input class="input" id="dl" type="datetime-local"></label>
-      <button class="btn block" id="pub">🚀 Nashr qilish</button>
+      <button class="btn block" id="pub">${mode === "later" ? "⏰ Rejalashtirish" : "🚀 Nashr qilish"}</button>
       <p class="note">Nashr qilinganda guruhdagi barcha ustozlarga xabar boradi. ♾ Muddatsiz test siz yakunlamaguningizcha faol turadi: ustoz xato savollar raqamini darhol ko'radi, to'g'ri javoblar va −5 jarima yakunlanganda.</p></div></div>`;
 
     const draw = () => {
@@ -657,10 +666,13 @@
       const head = `<div class="h-title">${esc(t.title)}</div>
         <div class="h-sub"><span class="chip ${cls}">${label}</span> · ${t.n} ta savol${t.has_file ? " · 📎 fayl bor" : ""}</div>
         <div class="h-sub" style="margin-top:6px">${t.status === "published" ? (t.deadline_at ? `Muddat: ${fmtDate(t.deadline_at)} (${left(t.deadline_at)} qoldi)` : "♾ Muddatsiz · «Hozir yakunlash» bilan yopasiz")
-          : t.status === "closed" ? `Yakunlangan: ${fmtDate(t.closed_at)}` : t.status === "queued" ? `Navbatda · davomiyligi ${t.queue_hours} soat` : "Hali nashr qilinmagan"}</div>`;
+          : t.status === "closed" ? `Yakunlangan: ${fmtDate(t.closed_at)}` : t.status === "queued" ? `Navbatda · davomiyligi ${t.queue_hours} soat`
+          : t.status === "scheduled" ? `⏰ ${fmtDate(t.publish_at)} da nashr qilinadi` : "Hali nashr qilinmagan"}</div>`;
 
       let actions = "";
       if (t.status === "draft") actions = publishBlock() + `<div class="section"><div class="agrid">${abtn("🔑", "Kalitni o'zgartirish", `data-go="/key/${t.id}"`)}${abtn("🗑", "O'chirish", `id="tdel"`, "danger")}</div></div>`;
+      if (t.status === "scheduled") actions = `<div class="section"><div class="warn">${scheduleText(t)}</div></div>
+        <div class="section"><div class="agrid">${abtn("🚀", "Hozir nashr qilish", `id="pubnow"`)}${abtn("↩️", "Rejani bekor qilish", `id="unq"`)}${abtn("🔑", "Kalitni o'zgartirish", `data-go="/key/${t.id}"`)}${abtn("🗑", "O'chirish", `id="tdel"`, "danger")}</div></div>`;
       if (t.status === "queued") actions = `<div class="section"><div class="agrid">${abtn("↩️", "Navbatdan olish", `id="unq"`)}${abtn("🔑", "Kalitni o'zgartirish", `data-go="/key/${t.id}"`)}${abtn("🗑", "O'chirish", `id="tdel"`, "danger")}</div></div>`;
       if (t.status === "published") actions = `<div class="section"><div class="agrid">${abtn("📣", "Eslatma yuborish", `id="remind"`)}${abtn("🔑", "Kalitni tuzatish", `data-go="/key/${t.id}"`)}${abtn("⏹", "Hozir yakunlash", `id="closeT"`, "danger")}</div></div>`;
       if (t.status === "closed") actions = `<div class="section"><div class="agrid">${abtn("🔑", "Kalitni tuzatish", `data-go="/key/${t.id}"`)}</div></div>`;
@@ -719,15 +731,24 @@
           haptic("ok"); toast(r.sent ? `📎 Fayl saqlandi va ${r.sent} ta ustozga yuborildi` : "📎 Fayl saqlandi"); reload();
         } catch (err) { haptic("err"); toast(err.message); }
       };
+      $app.querySelectorAll("[data-mode]").forEach((b) => b.onclick = () => { mode = b.dataset.mode; haptic(); draw(); });
       on("pub", async () => {
-        const dl = document.getElementById("dl");
+        const dl = document.getElementById("dl"), pat = document.getElementById("pat");
         const payload = dl && dl.value ? { deadline: `${dl.value}:00+05:00` } : { hours };
         const when = payload.deadline ? `${dl.value.replace("T", " ")} gacha` : DURATIONS.find(([h]) => h === hours)[1];
-        if (!(await confirmBox(`Nashr qilinsinmi? Muddat: ${when}. Hamma ustozlarga xabar boradi.`))) return;
+        if (mode === "later") {
+          if (!pat || !pat.value) return toast("Nashr vaqtini tanlang");
+          payload.publish_at = `${pat.value}:00+05:00`;
+          if (!(await confirmBox(`${pat.value.replace("T", " ")} da avtomatik nashr qilinsinmi? Muddat: ${when}.`))) return;
+        } else if (!(await confirmBox(`Nashr qilinsinmi? Muddat: ${when}. Hamma ustozlarga xabar boradi.`))) return;
         try { const r = await post(`/api/admin/tests/${id}/publish`, payload); haptic("ok");
-          toast(r.result === "queued" ? "Navbatga qo'yildi ⏳" : "Nashr qilindi 🚀"); reload(); } catch (e) { haptic("err"); toast(e.message); }
+          toast(r.result === "scheduled" ? "Rejalashtirildi ⏰" : r.result === "queued" ? "Navbatga qo'yildi ⏳" : "Nashr qilindi 🚀"); reload(); } catch (e) { haptic("err"); toast(e.message); }
       });
-      on("unq", async () => { try { await post(`/api/admin/tests/${id}/unqueue`); toast("Navbatdan olindi"); reload(); } catch (e) { toast(e.message); } });
+      on("pubnow", async () => {
+        if (!(await confirmBox("Test hozir nashr qilinsinmi? Hamma ustozlarga xabar boradi."))) return;
+        try { await post(`/api/admin/tests/${id}/publish_now`); haptic("ok"); toast("Nashr qilindi 🚀"); reload(); } catch (e) { toast(e.message); }
+      });
+      on("unq", async () => { try { await post(`/api/admin/tests/${id}/unqueue`); toast("Bekor qilindi — test qoralamaga qaytdi"); reload(); } catch (e) { toast(e.message); } });
       on("tdel", async () => {
         if (!(await confirmBox(`«${t.title}» o'chirilsinmi?`))) return;
         try { await del(`/api/admin/tests/${id}`); toast("O'chirildi"); go(`/g/${t.group_id}`); } catch (e) { toast(e.message); }
