@@ -97,3 +97,32 @@ def test_attach_api():
         await db.close()
 
     asyncio.run(scenario())
+
+
+def test_fix_key_notifications():
+    """Yakunlangan testda kalit tuzatilsa — hammaga qaysi savol o'zgargani; faol testda — faqat natijasi o'zgarganlarga."""
+    async def scenario():
+        db, cfg, session, bot, g, t = await setup()        # t faol, U2 "ABCD" bilan topshirgan
+        u1 = await db.get_user(U1)
+        await services.submit(db, cfg, await db.get_test(t.id), u1, "ABCC", utcnow())
+
+        # faol test: kalit sir — faqat natijasi o'zgarganlarga, kalit harfi ko'rsatilmaydi
+        session.sent.clear()
+        changed = await services.fix_key(bot, db, cfg, await db.get_test(t.id), "ABCC", ADMIN, utcnow())
+        assert changed == 2                                    # U1: 3→4, U2: 4→3
+        msgs = {m.chat_id: out_text(m) for m in session.sent}
+        assert set(msgs) == {U1, U2} and "avval" not in msgs[U1] and "3 → <b>4</b>" in msgs[U1]
+
+        # yakunlangan test: hammaga №4 o'zgargani, natijasi o'zgarmaganlarga ham
+        await services.close(bot, db, cfg, await db.get_test(t.id), utcnow())
+        await db.create_user(303, "998900000303", "Gani", None)
+        await db.add_member(g.id, 303, utcnow() - timedelta(days=2))   # topshirmagan a'zo ham bilsin
+        session.sent.clear()
+        changed = await services.fix_key(bot, db, cfg, await db.get_test(t.id), "ABCD", ADMIN, utcnow())
+        msgs = {m.chat_id: out_text(m) for m in session.sent}
+        assert set(msgs) == {U1, U2, 303}
+        assert all("№4 — to'g'ri javob <b>D</b> (avval C edi)" in x for x in msgs.values())
+        assert "4 → <b>3</b>" in msgs[U1] and "3 → <b>4</b>" in msgs[U2] and "o'zgarmadi" in msgs[303]
+        await db.close()
+
+    asyncio.run(scenario())

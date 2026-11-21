@@ -344,25 +344,41 @@ async def open_tests_reminder(bot: Bot, db: Database, cfg: Config, now: datetime
 
 async def fix_key(bot: Bot, db: Database, cfg: Config, test: Test, new_key: str, admin_id: int,
                   now: datetime) -> int:
-    """Kalitni yangilaydi, barcha natijalarni qayta hisoblaydi. Natijasi o'zgarganlar sonini qaytaradi."""
+    """Kalitni yangilaydi, barcha natijalarni qayta hisoblaydi. Natijasi o'zgarganlar sonini qaytaradi.
+
+    Xabarlar:
+    - test yakunlangan (kalit allaqachon hammaga ochiq) — guruhdagi BARCHA ustozlarga qaysi savol o'zgargani
+      va yangi to'g'ri javob; natijasi o'zgarganlarga shu xabarning o'zida yangi ball;
+    - test hali faol — kalit sir qoladi, faqat natijasi o'zgarganlarga yangi ball."""
+    old_key = test.answer_key
     await db.update_test(test.id, answer_key=new_key)
-    changed = 0
+    title = escape(test.title)
+    score_lines: dict[int, str] = {}
     for s in await db.list_submissions(test.id):
         new = grade(s.answers, new_key)
         diff = new - s.correct
         if not diff:
             continue
-        changed += 1
         await db.set_submission_correct(test.id, s.user_id, new)
         amount = diff * cfg.coins_per_correct
         await db.add_coins(s.user_id, test.group_id, amount,
                            f"«{test.title}»: kalit tuzatildi ({s.correct}→{new})", now,
                            test_id=test.id, created_by=admin_id)
         sign = "+" if amount > 0 else "−"
-        await safe_send(bot, s.user_id,
-                        f"🔑 «{escape(test.title)}» testining kaliti tuzatildi.\n"
-                        f"Natijangiz: {s.correct} → <b>{new}</b>/{test.n} ({sign}{abs(amount)} {COIN})")
-    return changed
+        score_lines[s.user_id] = f"Natijangiz: {s.correct} → <b>{new}</b>/{test.n} ({sign}{abs(amount)} {COIN})"
+
+    if test.status == "closed":
+        changes = [(i + 1, o, n) for i, (o, n) in enumerate(zip(old_key, new_key)) if o != n]
+        head = [f"🔑 <b>«{title}» testining kaliti tuzatildi:</b>"]
+        head += [f"№{num} — to'g'ri javob <b>{new}</b> (avval {old} edi)" for num, old, new in changes[:30]]
+        recipients = {m.id for m in await db.list_members(test.group_id)} | set(score_lines)
+        for uid in recipients:
+            tail = score_lines.get(uid, "Natijangiz o'zgarmadi.")
+            await safe_send(bot, uid, "\n".join(head) + "\n\n" + tail)
+    else:
+        for uid, line in score_lines.items():
+            await safe_send(bot, uid, f"🔑 «{title}» testining kaliti tuzatildi.\n{line}")
+    return len(score_lines)
 
 
 # ---------------- reyting ----------------
