@@ -8,6 +8,7 @@ from aiogram.fsm.storage.memory import MemoryStorage
 from aiogram.types import BotCommand, MenuButtonWebApp, WebAppInfo
 
 from .config import load_config
+from .timeutil import utcnow
 from .db import Database
 from . import keyboards, scheduler
 from .web.api import start_server
@@ -20,6 +21,11 @@ async def main() -> None:
     config = load_config()
     db = Database(config.db_path)
     await db.connect()
+    # tanga qoidalari o'zgargan bo'lsa (masalan, dars jarimasi bekor qilindi) — o'tgan darslarni moslash
+    from . import services
+    fixed = await services.resync_lesson_coins(db, config, utcnow())
+    if fixed:
+        logging.getLogger(__name__).info("Jonli dars tangalari yangi qoidaga moslandi: %s ta yozuv", fixed)
 
     bot = Bot(config.bot_token, default=DefaultBotProperties(parse_mode=ParseMode.HTML))
     dp = Dispatcher(storage=MemoryStorage())

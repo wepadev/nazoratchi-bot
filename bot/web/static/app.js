@@ -184,7 +184,7 @@
         <button class="row" data-video="${esc(v.url)}"><div class="ai-play">▶</div><div class="grow"><div class="t">${esc(v.title)}</div>
           <div class="s">${fmtDate(v.date).split(" ")[0]} · jonli dars yozuvi</div></div><span class="chev">›</span></button>`).join("")}</div></div>` : ""}
       <p class="note">To'g'ri javob: +${HOME.rules.per_correct} · Testni topshirmaslik: −${HOME.rules.penalty}<br>
-        Jonli darsda qatnashish: +${HOME.rules.per_lesson} · Darsni qoldirish: −${HOME.rules.missed_lesson} (tanga)</p>`);
+        Jonli darsda qatnashish: +${HOME.rules.per_lesson}${HOME.rules.missed_lesson ? ` · Darsni qoldirish: −${HOME.rules.missed_lesson}` : ""} (tanga)</p>`);
 
     $app.querySelectorAll("[data-g]").forEach((b) => b.onclick = () => { store.set("group", +b.dataset.g); haptic(); ustozHome(); });
     $app.querySelectorAll("[data-video]").forEach((b) => b.onclick = () => openUrl(b.dataset.video));

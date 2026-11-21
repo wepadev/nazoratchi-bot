@@ -519,7 +519,7 @@ def lesson_label(lesson: Lesson) -> str:
 
 
 async def sync_lesson_coins(db: Database, cfg: Config, lesson: Lesson, user_id: int, now: datetime,
-                            admin_id: int | None = None) -> int:
+                            admin_id: int | None = None, note: str | None = None) -> int:
     """Shu dars bo'yicha ustozning tangasini qoidaga moslaydi va farqini qaytaradi.
     Qatnashdi: +coins_per_lesson; dars yopilgan va qatnashmadi: −penalty_missed_lesson; dars ochiq va hali yo'q: 0.
     Qayta chaqirilsa ham tanga ikki marta yozilmaydi (ledger bo'yicha farq hisoblanadi)."""
@@ -533,7 +533,7 @@ async def sync_lesson_coins(db: Database, cfg: Config, lesson: Lesson, user_id: 
     diff = target - await db.lesson_coins(lesson.id, user_id)
     if diff:
         await db.add_coins(user_id, lesson.group_id, diff,
-                           f"Jonli dars «{lesson.title}» {local(lesson.created_at):%d.%m}: {what}", now,
+                           f"Jonli dars «{lesson.title}» {local(lesson.created_at):%d.%m}: {note or what}", now,
                            lesson_id=lesson.id, created_by=admin_id)
     return diff
 
@@ -644,3 +644,17 @@ async def send_test_file(bot: Bot, db: Database, test: Test, updated: bool = Fal
         sub = await db.get_submission(test.id, m.id)
         sent += await send_test(bot, m.id, test, caption, None if sub else kb.answer_kb(test.id))
     return sent
+
+
+async def resync_lesson_coins(db: Database, cfg: Config, now: datetime) -> int:
+    """Barcha yopilgan darslar tangalarini joriy qoidaga moslaydi (masalan, jarima bekor qilinganda qaytariladi).
+    Idempotent: hech narsa o'zgarmagan bo'lsa hech narsa yozmaydi. O'zgargan yozuvlar sonini qaytaradi."""
+    changed = 0
+    for g in await db.list_groups():
+        for lesson in await db.list_lessons(g.id):
+            if lesson.is_open(now):
+                continue
+            for u, _ in await db.lesson_roster(lesson):
+                if await sync_lesson_coins(db, cfg, lesson, u.id, now, note="tanga qoidasi yangilandi"):
+                    changed += 1
+    return changed

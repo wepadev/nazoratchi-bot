@@ -53,13 +53,15 @@ bot avtomatik tekshiradi, tanga beradi va reyting tuzadi.
 - Darsdan keyin guruhga qo'shilganlar o'sha dars uchun qatnashmagan hisoblanmaydi.
 - **📺 Dars yozuvlari:** nazoratchi darsga YouTube havolasini qo'shadi (bot: dars kartochkasi → 📺; Mini App: dars sahifasi).
   Yangi havola guruhdagi ustozlarga yuboriladi; ustozlarda botdagi «📺 Dars yozuvlari» va Mini App bosh sahifasida doim turadi.
-- Tanga: qatnashgan **+5** (kod kiritilishi bilan), qoldirgan **−5** (kod yopilganda, ustozga xabar boradi).
+- Tanga: qatnashgan **+10** (kod kiritilishi bilan); qoldirganga tanga **berilmaydi ham, olinmaydi ham**
+  (`PENALTY_MISSED_LESSON=0`). Qoida o'zgarsa, bot ishga tushganda o'tgan darslar tangasi avtomatik moslanadi.
+  Darsni qoldirgan ustoz guruhdan **chiqarilmaydi** (avtomatik chiqarish yo'q).
   Nazoratchi qo'lda belgilasa yoki belgini olsa, farq avtomatik to'g'rilanadi; dars o'chirilsa, uning tangalari ham o'chadi.
   `COINS_PER_LESSON`, `PENALTY_MISSED_LESSON` bilan o'zgartiriladi.
 
 ## Tanga va reyting
 
-- Har bir to'g'ri javob: **+1**, topshirmaslik: **−5**; jonli dars: qatnashish **+5**, qoldirish **−5** (`.env` da o'zgartiriladi).
+- Har bir to'g'ri javob: **+1**, topshirmaslik: **−5**; jonli dars: qatnashish **+10**, qoldirish **0** (`.env` da o'zgartiriladi).
 - Har bir tanga sababi bilan yoziladi (Excel'dagi «Tangalar tarixi»).
 - Reyting **har bir guruh uchun alohida**: umumiy / shu hafta / o'tgan hafta. Teng tangalilar bir o'rinda.
 - Ustoz o'z o'rnini va TOP-10 ga qancha tanga qolganini ko'radi.

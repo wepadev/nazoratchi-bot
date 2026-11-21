@@ -22,11 +22,11 @@ SUPER, ADMIN, U1, U2, U3, LATE = 100, 200, 301, 302, 303, 304
 TOKEN = "123456:TEST"
 
 
-async def setup():
+async def setup(**cfg_kw):
     services._wrong_codes.clear()
     db = Database(":memory:")
     await db.connect()
-    cfg = Config(bot_token=TOKEN, super_admin_ids=frozenset({SUPER}), db_path=":memory:")
+    cfg = Config(bot_token=TOKEN, super_admin_ids=frozenset({SUPER}), db_path=":memory:", **cfg_kw)
     session = FakeSession()
     bot = Bot(TOKEN, session=session)
     now = utcnow()
@@ -176,8 +176,9 @@ def test_api():
 
 
 def test_coins():
+    """Jarima mexanizmi (sozlamada yoqilgan bo'lsa): qatnashgan +5, qoldirgan −5."""
     async def scenario():
-        db, cfg, session, bot, g = await setup()
+        db, cfg, session, bot, g = await setup(penalty_missed_lesson=5)
         now = utcnow()
 
         def coins():
@@ -188,29 +189,29 @@ def test_coins():
         lesson = await db.create_lesson(g.id, "Hosila", "7777", ADMIN, now, now + timedelta(hours=1))
         status, _ = await services.attend(db, await db.get_user(U1), "7777", now, cfg)
         assert status == "ok"
-        assert "(+5" in services.attend_reply(status, [lesson], cfg)
-        assert (await coins()) == {U1: 5, U2: 0, U3: 0}
+        assert "(+10" in services.attend_reply(status, [lesson], cfg)
+        assert (await coins()) == {U1: 10, U2: 0, U3: 0}
         await services.attend(db, await db.get_user(U1), "7777", now, cfg)  # qayta kiritish tanga bermaydi
-        assert (await coins())[U1] == 5
+        assert (await coins())[U1] == 10
 
         # kod yopildi: qoldirganlarga −5 va xabar; ikkinchi marta yopish hech narsa o'zgartirmaydi
         session.sent.clear()
         later = now + timedelta(hours=2)
         await scheduler.tick(bot, db, cfg, later)
-        assert (await coins()) == {U1: 5, U2: -5, U3: -5}
+        assert (await coins()) == {U1: 10, U2: -5, U3: -5}
         assert {m.chat_id for m in session.sent if "qatnashmadingiz" in out_text(m)} == {U2, U3}
         await services.close_lesson(bot, db, cfg, lesson, later)
         lesson = await db.get_lesson(lesson.id)
         for uid in (U1, U2, U3):
             await services.sync_lesson_coins(db, cfg, lesson, uid, later)
-        assert (await coins()) == {U1: 5, U2: -5, U3: -5}
+        assert (await coins()) == {U1: 10, U2: -5, U3: -5}
 
         # nazoratchi yopilgandan keyin qo'lda belgilaydi / belgini oladi
         await db.mark_attendance(lesson.id, U2, later, marked_by=ADMIN)
-        assert await services.sync_lesson_coins(db, cfg, lesson, U2, later, ADMIN) == 10
+        assert await services.sync_lesson_coins(db, cfg, lesson, U2, later, ADMIN) == 15
         await db.unmark_attendance(lesson.id, U1)
-        assert await services.sync_lesson_coins(db, cfg, lesson, U1, later, ADMIN) == -10
-        assert (await coins()) == {U1: -5, U2: 5, U3: -5}
+        assert await services.sync_lesson_coins(db, cfg, lesson, U1, later, ADMIN) == -15
+        assert (await coins()) == {U1: -5, U2: 10, U3: -5}
 
         # dars o'chirilsa, uning tangalari ham o'chadi
         await db.delete_lesson(lesson.id)
@@ -284,6 +285,41 @@ def test_code_field_only_while_open():
         assert await home(U3) == []
         assert T.NO_OPEN_LESSON in await say(U3, T.BTN_ATTEND)
         await client.close()
+        await db.close()
+
+    asyncio.run(scenario())
+
+
+def test_no_penalty_by_default_and_refund():
+    """Standart: qoldirganga tanga berilmaydi ham, olinmaydi ham (xabar ham yo'q); qatnashganga +5.
+    Avval −5 olganlarga resync qaytaradi; qayta chaqirilsa hech narsa o'zgarmaydi."""
+    async def scenario():
+        db, cfg, session, bot, g = await setup()
+        assert cfg.coins_per_lesson == 10 and cfg.penalty_missed_lesson == 0
+        now = utcnow()
+
+        async def coins():
+            return {u.id: c for u, c in await db.rating(g.id)}
+
+        lesson = await db.create_lesson(g.id, "Hosila", "7777", ADMIN, now, now + timedelta(hours=1))
+        await services.attend(db, await db.get_user(U1), "7777", now, cfg)
+        session.sent.clear()
+        await scheduler.tick(bot, db, cfg, now + timedelta(hours=2))
+        assert (await coins()) == {U1: 10, U2: 0, U3: 0}
+        assert not [m for m in session.sent if "qatnashmadingiz" in out_text(m)]
+        # qoldirganlar guruhdan chiqarilmaydi
+        assert {u.id for u in await db.list_members(g.id)} == {U1, U2, U3}
+
+        # eski qoida bo'yicha −5 olgan dars -> yangi qoida bilan resync qaytaradi
+        old = await db.create_lesson(g.id, "Eski", "1111", ADMIN, now - timedelta(days=3),
+                                     now - timedelta(days=3) + timedelta(hours=1))
+        old_cfg = Config(bot_token=TOKEN, super_admin_ids=frozenset({SUPER}), db_path=":memory:", penalty_missed_lesson=5)
+        for uid in (U1, U2, U3):
+            await services.sync_lesson_coins(db, old_cfg, old, uid, now)
+        assert (await coins()) == {U1: 5, U2: -5, U3: -5}
+        assert await services.resync_lesson_coins(db, cfg, now) == 3
+        assert (await coins()) == {U1: 10, U2: 0, U3: 0}
+        assert await services.resync_lesson_coins(db, cfg, now) == 0     # idempotent
         await db.close()
 
     asyncio.run(scenario())
