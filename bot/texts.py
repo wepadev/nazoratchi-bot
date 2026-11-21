@@ -121,3 +121,5 @@ def IN_OTHER_GROUP(name: str) -> str:  # noqa: N802 — boshqa matn konstantalar
 ASK_VIDEO_URL = ("📺 Dars yozuvining <b>YouTube havolasini</b> yuboring.\n\nMasalan: <code>https://youtu.be/abc123</code>\n"
                  "Yozuvni olib tashlash uchun <code>-</code> yuboring.")
 NO_RECORDINGS = "Hozircha dars yozuvlari yo'q. Yozuv qo'shilganda bot xabar beradi. 🔔"
+NO_OPEN_LESSON = ("Hozir ochiq jonli dars yo'q. 🎥\n\n"
+                  "Dars oxirida kod aytilganda uni botga shunchaki yozib yuborasiz, masalan: <code>4821</code>")

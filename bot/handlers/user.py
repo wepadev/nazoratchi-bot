@@ -306,7 +306,13 @@ async def profile(message: Message, db: Database, user: User, is_admin: bool, is
 # ---------------- jonli dars davomati ----------------
 
 @router.message(F.text == T.BTN_ATTEND)
-async def attend_start(message: Message, state: FSMContext):
+async def attend_start(message: Message, state: FSMContext, db: Database, user: User):
+    lessons = await db.open_lessons_for_user(user.id, utcnow())
+    pending = [l for l, attended in lessons if not attended]
+    if not pending:
+        if lessons:
+            return await message.answer("✅ Siz hozirgi jonli darsda qatnashgan deb belgilangansiz.")
+        return await message.answer(T.NO_OPEN_LESSON)
     await state.set_state(Attend.code)
     await message.answer(T.ASK_ATTEND_CODE, reply_markup=kb.cancel_kb())
 

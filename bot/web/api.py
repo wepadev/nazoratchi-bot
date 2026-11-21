@@ -109,7 +109,10 @@ async def home(request: web.Request) -> web.Response:
     cfg = request.app[K_CFG]
     recordings = [{"id": l.id, "title": l.title, "date": iso(l.created_at), "url": l.video_url}
                   for l in await db.user_recordings(u.id, limit=30)]
+    open_lessons = [{"id": l.id, "title": l.title, "closes_at": iso(l.closes_at), "attended": att}
+                    for l, att in await db.open_lessons_for_user(u.id, utcnow())]  # kod yuborilmaydi
     return web.json_response({"groups": groups, "active": active, "recent": recent[:15], "recordings": recordings,
+                              "lessons": open_lessons,
                               "rules": {"per_correct": cfg.coins_per_correct, "penalty": cfg.penalty_not_submitted,
                                         "per_lesson": cfg.coins_per_lesson, "missed_lesson": cfg.penalty_missed_lesson}})
 

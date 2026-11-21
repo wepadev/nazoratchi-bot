@@ -248,3 +248,42 @@ def test_code_inside_other_action():
         await db.close()
 
     asyncio.run(scenario())
+
+
+def test_code_field_only_while_open():
+    """Kod maydoni (API: home.lessons) faqat ochiq dars va hali qatnashilmagan bo'lsa; kod oshkor qilinmaydi."""
+    async def scenario():
+        db, cfg, session, bot, g = await setup()
+        client = TestClient(TestServer(create_app(db, bot, cfg)))
+        await client.start_server()
+        dp = build_dispatcher(db, cfg)
+
+        async def home(uid):
+            r = await client.get("/api/home", headers={"X-Telegram-Init-Data": init_data(uid)})
+            return (await r.json())["lessons"]
+
+        async def say(uid, text):
+            session.sent.clear()
+            await dp.feed_update(bot, msg_update(uid, text))
+            return [out_text(m) for m in session.sent if m.chat_id == uid]
+
+        assert await home(U1) == []
+        assert T.NO_OPEN_LESSON in await say(U1, T.BTN_ATTEND)          # dars yo'q — kod so'ralmaydi
+
+        now = utcnow()
+        lesson = await db.create_lesson(g.id, "Hosila", "4821", ADMIN, now, now + timedelta(hours=1))
+        ls = await home(U1)
+        assert len(ls) == 1 and not ls[0]["attended"] and "code" not in ls[0]
+        assert T.ASK_ATTEND_CODE in await say(U2, T.BTN_ATTEND)
+
+        await services.attend(db, await db.get_user(U1), "4821", now, cfg)
+        assert (await home(U1))[0]["attended"] is True                  # qatnashgandan keyin maydon yashirinadi
+        assert "qatnashgan" in (await say(U1, T.BTN_ATTEND))[0]
+
+        await db.close_lesson(lesson.id, now)                           # muddati tugadi / yopildi
+        assert await home(U3) == []
+        assert T.NO_OPEN_LESSON in await say(U3, T.BTN_ATTEND)
+        await client.close()
+        await db.close()
+
+    asyncio.run(scenario())

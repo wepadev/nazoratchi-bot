@@ -81,7 +81,7 @@
     try { if (tg && tg.openLink && tg.initData) return tg.openLink(url); } catch { /* */ }
     window.open(url, "_blank", "noopener");
   }
-  function clearTimers() { timers.forEach(clearInterval); timers = []; }
+  function clearTimers() { timers.forEach((t) => { clearInterval(t); clearTimeout(t); }); timers = []; }
   function render(html) { $app.innerHTML = html; window.scrollTo(0, 0); }
   function loading() { render(`<div class="loader"><span></span></div>`); }
   function stateView(icon, title, text, btn) {
@@ -170,9 +170,11 @@
           : `<span class="chip ${t.correct === t.n ? "ok" : "muted"}">${t.correct}/${t.n}</span>`}
         <span class="chev">›</span></button>`).join("")}</div>` : `<div class="card empty">Natijalar shu yerda chiqadi.</div>`;
 
+    // kod maydoni faqat hozir ochiq va ustoz hali qatnashmagan dars bo'lsa ko'rinadi
+    const pendingLessons = (HOME.lessons || []).filter((l) => !l.attended && new Date(l.closes_at) > Date.now());
     render(`${hero}
-      ${g ? `<div class="section"><div class="card"><div class="title" style="font-weight:700">🎥 Jonli dars kodi</div>
-        <div class="h-sub" style="margin:4px 0 12px">Dars oxirida aytilgan 4 xonali kodni kiriting</div>
+      ${pendingLessons.length ? `<div class="section"><div class="card"><div class="title" style="font-weight:700">🎥 Jonli dars kodi</div>
+        <div class="h-sub" style="margin:4px 0 12px">«${esc(pendingLessons[0].title)}» — dars oxirida aytilgan 4 xonali kodni kiriting · ${fmtDate(pendingLessons[0].closes_at).split(" ")[1]} gacha</div>
         <div class="stepper"><input class="input" id="acode" inputmode="numeric" maxlength="4" placeholder="• • • •" style="letter-spacing:6px;font-size:20px">
         <button class="btn" id="asend" style="width:auto;padding:0 18px;font-size:16px">Yuborish</button></div></div></div>` : ""}
       <div class="section"><div class="label">Faol testlar</div>${active}</div>
@@ -186,6 +188,10 @@
 
     $app.querySelectorAll("[data-g]").forEach((b) => b.onclick = () => { store.set("group", +b.dataset.g); haptic(); ustozHome(); });
     $app.querySelectorAll("[data-video]").forEach((b) => b.onclick = () => openUrl(b.dataset.video));
+    if (pendingLessons.length) {  // muddat tugashi bilan maydon yo'qolsin
+      const ms = Math.min(...pendingLessons.map((l) => new Date(l.closes_at) - Date.now())) + 1000;
+      timers.push(setTimeout(() => { if (!location.hash.replace(/^#\/?/, "")) ustozHome().catch(showError); }, Math.min(ms, 2 ** 31 - 1)));
+    }
     const asend = document.getElementById("asend");
     if (asend) {
       const ainput = document.getElementById("acode");
@@ -771,7 +777,7 @@
     const code = input.value.replace(/\D/g, "");
     if (code.length !== 4) { haptic("err"); return toast("Kod 4 ta raqamdan iborat bo'lishi kerak"); }
     btn.disabled = true;
-    try { const r = await post("/api/attend", { code }); haptic("ok"); toast(r.message); input.value = ""; }
+    try { const r = await post("/api/attend", { code }); haptic("ok"); toast(r.message); input.value = ""; ustozHome().catch(showError); }
     catch (e) { haptic("err"); toast(e.message); }
     finally { btn.disabled = false; }
   }

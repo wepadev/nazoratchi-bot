@@ -708,6 +708,21 @@ class Database:
             "SELECT 1 FROM lessons WHERE group_id = ? AND code = ? AND closed_at IS NULL AND closes_at > ?",
             (group_id, code, to_db(now))))
 
+    async def open_lessons_for_user(self, user_id: int, now: datetime) -> list[tuple[Lesson, bool]]:
+        """Ustoz guruhlaridagi hozir ochiq (kodi amal qilayotgan) darslar va ustoz qatnashganmi."""
+        rows = await self._all(
+            f"""SELECT {_LESSON_COLS},
+                       EXISTS(SELECT 1 FROM attendance a WHERE a.lesson_id = l.id AND a.user_id = ?) AS attended
+                FROM lessons l JOIN group_members m ON m.group_id = l.group_id
+                WHERE m.user_id = ? AND l.closed_at IS NULL AND l.closes_at > ? ORDER BY l.closes_at""",
+            (user_id, user_id, to_db(now)))
+        out = []
+        for r in rows:
+            d = dict(r)
+            attended = bool(d.pop("attended"))
+            out.append((_lesson(d), attended))
+        return out
+
     async def open_lessons_by_code(self, user_id: int, code: str, now: datetime) -> list[Lesson]:
         """Foydalanuvchi guruhlaridagi, kodi mos va hali ochiq darslar."""
         rows = await self._all(
