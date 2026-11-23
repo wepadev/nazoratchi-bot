@@ -40,9 +40,10 @@ async def setup(**cfg_kw):
 def test_open_reminder_every_interval():
     async def scenario():
         db, cfg, session, bot, g = await setup(quiet_hours=(0, 0))
+        assert cfg.reminder_interval_hours == 1                      # standart: har soatda
         now = utcnow()
         t1 = await db.create_test(g.id, "Uy vazifa 1", "AB", None, None, ADMIN)
-        t2 = await db.create_test(g.id, "Uy vazifa 2", "CD", None, None, ADMIN)
+        t2 = await db.create_test(g.id, "Uy vazifa 2", "CDA", None, None, ADMIN)
         for t in (t1, t2):
             await services.publish(bot, db, cfg, t, None, now)
         await services.submit(db, cfg, await db.get_test(t1.id), await db.get_user(U1), "AB", now)
@@ -52,17 +53,40 @@ def test_open_reminder_every_interval():
             await services.send_reminders(bot, db, cfg, at)
             return {m.chat_id: out_text(m) for m in session.sent}
 
-        assert await tick(now + timedelta(hours=1)) == {}           # e'londan keyin darhol emas
-        first = await tick(now + timedelta(hours=3, minutes=1))
+        assert await tick(now + timedelta(minutes=30)) == {}        # e'londan keyin darhol emas
+        first = await tick(now + timedelta(minutes=61))
         assert set(first) == {U1, U2}                              # har biriga bitta xabar
-        assert "1 ta" in first[U1] and "Uy vazifa 2" in first[U1] and "Uy vazifa 1" not in first[U1]
-        assert "2 ta" in first[U2] and "+4</b> tangagacha" in first[U2]
-        assert await tick(now + timedelta(hours=4)) == {}           # 3 soat o'tmagan
-        second = await tick(now + timedelta(hours=6, minutes=2))
+        assert "Uy vazifa 2" in first[U1] and "Uy vazifa 1" not in first[U1]   # topshirgani yo'q
+        assert "Uy vazifa 1" in first[U2] and "Uy vazifa 2" in first[U2]
+        assert "3 ta" in first[U1]                                 # nechta test ekani yozilgan
+        assert await tick(now + timedelta(minutes=90)) == {}        # soat o'tmagan
+        second = await tick(now + timedelta(minutes=122))
         assert set(second) == {U1, U2}
-        # har safar boshqa sarlavha
         assert first[U2].split("\n")[0] != second[U2].split("\n")[0]
         assert await db.due_tests(now + timedelta(days=365)) == []  # muddatsiz test o'zi yopilmaydi
+        await db.close()
+
+    asyncio.run(scenario())
+
+
+def test_reminder_styles_vary():
+    """Bir ustozga ketma-ket 8 ta eslatma — hammasi boshqa uslubda (mavzu va soni har birida bor)."""
+    async def scenario():
+        from bot import motivation
+        motivation._decks.clear()  # boshqa testlar shu ustoz uchun aylanishni boshlab qo'ygan bo'lishi mumkin
+        motivation._last.clear()
+        db, cfg, session, bot, g = await setup(quiet_hours=(0, 0))
+        now = utcnow()
+        t = await db.create_test(g.id, "Logarifmlar", "ABCDABCDAB", None, None, ADMIN)
+        await services.publish(bot, db, cfg, t, None, now)
+        bodies = []
+        for h in range(1, 9):
+            session.sent.clear()
+            await services.send_reminders(bot, db, cfg, now + timedelta(hours=h, minutes=1))
+            text = next(out_text(m) for m in session.sent if m.chat_id == U1)
+            assert "Logarifmlar" in text and ("10 ta" in text or "10 daqiqa" in text or "+10" in text)
+            bodies.append(text.split("\n")[2])                       # sarlavhadan keyingi asosiy qator
+        assert len(set(bodies)) == 8
         await db.close()
 
     asyncio.run(scenario())

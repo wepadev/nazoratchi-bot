@@ -11,7 +11,7 @@ class Config:
     bot_token: str
     super_admin_ids: frozenset[int]
     db_path: str
-    reminder_interval_hours: float = 3.0     # topshirmaganlarga eslatma oralig'i
+    reminder_interval_hours: float = 1.0     # topshirmaganlarga eslatma oralig'i
     final_reminder_minutes: int = 60          # muddat tugashidan oldingi oxirgi eslatma
     quiet_hours: tuple[int, int] = (23, 7)    # tunda eslatma yuborilmaydi (Toshkent vaqti)
     penalty_not_submitted: int = 5            # topshirmaganlik uchun ayiriladigan tanga
@@ -45,7 +45,7 @@ def load_config() -> Config:
         bot_token=token,
         super_admin_ids=ids,
         db_path=os.getenv("DB_PATH", "data/bot.db"),
-        reminder_interval_hours=float(os.getenv("REMINDER_INTERVAL_HOURS", "3")),
+        reminder_interval_hours=float(os.getenv("REMINDER_INTERVAL_HOURS", "1")),
         final_reminder_minutes=int(os.getenv("FINAL_REMINDER_MINUTES", "60")),
         quiet_hours=_quiet(os.getenv("QUIET_HOURS", "23-7")),
         penalty_not_submitted=int(os.getenv("PENALTY_NOT_SUBMITTED", "5")),

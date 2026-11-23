@@ -279,47 +279,92 @@ async def deadline_reminder_text(ctx: _ReminderContext, cfg: Config, uid: int, t
     return "\n".join(lines)
 
 
-async def open_reminder_text(ctx: _ReminderContext, cfg: Config, uid: int, tests: list[Test]) -> str:
-    lines = [f"<b>{motivation.headline(uid)}</b>", "", f"Sizni <b>{len(tests)} ta</b> test kutyapti:"]
-    for t in tests[:15]:
-        done = await ctx.submitted(t.id)
-        extra = f" · {done} nafar topshirdi" if done else ""
-        lines.append(f"• «{escape(t.title)}» — {t.n} savol · kod <code>{t.id}</code>{extra}")
-    total = sum(t.n for t in tests) * cfg.coins_per_correct
-    lines += ["", f"{COIN} Hammasini ishlasangiz: <b>+{total}</b> tangagacha",
-              f"⚠️ Topshirilmagan har bir test: −{cfg.penalty_not_submitted} (test yakunlanganda)"]
-    place = await ctx.place(tests[0].group_id, uid)
-    if place:
-        lines.append(f"📍 Hozir reytingda {place}-o'rindasiz")
-    lines += ["⚡️ Tez yuborish: <code>kod*abcd...</code>", "", motivation.cta(uid)]
+def _deadline_note(t: Test, now: datetime) -> str:
+    return f" (muddat {fmt(t.deadline_at)} gacha, {fmt_left(t.deadline_at - now)} qoldi)" if t.deadline_at else ""
+
+
+async def hourly_reminder_text(ctx: _ReminderContext, cfg: Config, uid: int, tests: list[Test], now: datetime) -> str:
+    """Soatlik eslatma: qaysi mavzudan nechta test — har safar boshqa uslubda."""
+    items = []
+    for t in tests[:10]:
+        items.append((escape(t.title), t.n, t.id, _deadline_note(t, now), await ctx.submitted(t.id)))
+    first_title, first_n, _, first_dl, first_done = items[0]
+    rest = items[1:]
+    total = sum(n for _, n, *_ in items)
+    others = [f"• «{ti}» — {n} ta test{dl}" for ti, n, _, dl, _ in rest]
+
+    style = motivation.pick(uid, motivation.REMINDER_STYLES, "style")
+    if style == "list":
+        body = [f"Sizni <b>{len(items)} ta</b> mavzu bo'yicha testlar kutyapti:"]
+        body += [f"• «{ti}» — <b>{n} ta</b> test{dl}" for ti, n, _, dl, _ in items]
+    elif style == "sentence":
+        if not rest:
+            body = [f"Bugun «{first_title}» mavzusidan <b>{first_n} ta</b> test ishlashingiz kerak{first_dl}."]
+        else:
+            parts = ", ".join(f"«{ti}» — {n} ta" for ti, n, *_ in items)
+            body = [f"Bugun ishlashingiz kerak bo'lgan testlar: {parts}."]
+    elif style == "total":
+        body = [f"Jami <b>{total} ta</b> test qoldi:"]
+        body += [f"▫️ «{ti}» — {n} ta{dl}" for ti, n, _, dl, _ in items]
+    elif style == "challenge":
+        body = [f"🎯 Kichik challenge: «{first_title}» mavzusidagi <b>{first_n} ta</b> testni keyingi bir soatda yakunlang!{first_dl}"]
+        if rest:
+            body += ["Keyin navbatda:"] + others
+    elif style == "time":
+        body = [f"⏱ Har bir testga ~1 daqiqa desak, «{first_title}» ({first_n} ta) taxminan <b>{first_n} daqiqa</b> oladi.{first_dl}"]
+        if rest:
+            body += ["Qolganlari:"] + others
+    elif style == "question":
+        body = [f"«{first_title}» mavzusidagi <b>{first_n} ta</b> test hali ochiq turibdi{first_dl}. Qachon boshlaymiz? 🙂"]
+        if rest:
+            body += ["Yana kutayotganlar:"] + others
+    elif style == "coins":
+        body = [f"{COIN} «{ti}» — {n} ta test = <b>+{n * cfg.coins_per_correct}</b> tangagacha{dl}"
+                for ti, n, _, dl, _ in items]
+    else:  # peers
+        if first_done:
+            body = [f"👥 Guruhdoshlaringizdan <b>{first_done} nafari</b> «{first_title}» bo'yicha {first_n} ta testni ishlab bo'ldi. Siz-chi?{first_dl}"]
+        else:
+            body = [f"👀 «{first_title}» ({first_n} ta test) bo'yicha hali hech kim topshirmadi — birinchi bo'ling!{first_dl}"]
+        if rest:
+            body += others
+
+    extra = motivation.pick(uid, ["coins", "place", "penalty", "none"], "extra")
+    extra_line = ""
+    if extra == "coins" and style != "coins":
+        extra_line = f"{COIN} Hammasini ishlasangiz: <b>+{total * cfg.coins_per_correct}</b> tangagacha"
+    elif extra == "place":
+        place = await ctx.place(tests[0].group_id, uid)
+        extra_line = f"📍 Hozir reytingda {place}-o'rindasiz" if place else ""
+    elif extra == "penalty":
+        extra_line = f"⚠️ Topshirilmagan har bir test: −{cfg.penalty_not_submitted} tanga"
+
+    lines = [f"<b>{motivation.headline(uid)}</b>", ""] + body
+    if extra_line:
+        lines += ["", extra_line]
+    codes = ", ".join(f"<code>{code}*...</code>" for _, _, code, _, _ in items[:3])
+    lines += [f"⚡️ Tez yuborish: {codes}", "", motivation.cta(uid)]
     return "\n".join(lines)
 
 
 async def send_reminders(bot: Bot, db: Database, cfg: Config, now: datetime) -> None:
-    interval = timedelta(hours=cfg.reminder_interval_hours)
     final_window = timedelta(minutes=cfg.final_reminder_minutes)
-    quiet = is_quiet(now, *cfg.quiet_hours)
     ctx = _ReminderContext(db)
-    # muddatli testlar: har test uchun alohida, muddatdan oldin oxirgi eslatma (tunda ham)
+    # muddatli test: muddatdan oldin oxirgi, shoshiltiruvchi eslatma (tunda ham)
     for t in await db.published_tests():
-        if not t.deadline_at or t.deadline_at <= now:
-            continue
-        left = t.deadline_at - now
-        final = not t.final_reminded and left <= final_window
-        regular = (not quiet and left > final_window
-                   and now - (t.reminded_at or t.published_at) >= interval)
-        if not (final or regular):
+        if not t.deadline_at or t.deadline_at <= now or t.final_reminded or t.deadline_at - now > final_window:
             continue
         for u in await db.non_submitters(t, only_before_publish=False):
-            await safe_send(bot, u.id, await deadline_reminder_text(ctx, cfg, u.id, t, now, final), kb.answer_kb(t.id))
-        await db.set_reminded(t.id, now, final=final)
-    await open_tests_reminder(bot, db, cfg, now, ctx)
+            await safe_send(bot, u.id, await deadline_reminder_text(ctx, cfg, u.id, t, now, True), kb.answer_kb(t.id))
+        await db.set_reminded(t.id, now, final=True)
+    await hourly_tests_reminder(bot, db, cfg, now, ctx)
 
 
-async def open_tests_reminder(bot: Bot, db: Database, cfg: Config, now: datetime,
-                              ctx: _ReminderContext | None = None) -> None:
-    """Muddatsiz testlar: har REMINDER_INTERVAL_HOURS da (tunda emas) har bir ustozga BITTA umumiy xabar.
-    Test nashr qilinganidan keyin kamida shuncha vaqt o'tgan bo'lishi kerak (e'londan darhol keyin eslatma bormaydi)."""
+async def hourly_tests_reminder(bot: Bot, db: Database, cfg: Config, now: datetime,
+                                ctx: _ReminderContext | None = None) -> None:
+    """Har REMINDER_INTERVAL_HOURS da (standart — har soatda, tunda emas) har bir ustozga BITTA xabar:
+    topshirmagan barcha testlari (muddatli va muddatsiz), mavzu va testlar soni bilan.
+    E'londan keyin kamida shuncha vaqt o'tgan testlar kiradi; topshirganlarga bormaydi."""
     if is_quiet(now, *cfg.quiet_hours):
         return
     interval = timedelta(hours=cfg.reminder_interval_hours)
@@ -328,7 +373,7 @@ async def open_tests_reminder(bot: Bot, db: Database, cfg: Config, now: datetime
         return
     pending: dict[int, list[Test]] = {}
     for t in await db.published_tests():
-        if t.deadline_at or now - t.published_at < interval:
+        if now - t.published_at < interval or (t.deadline_at and t.deadline_at <= now):
             continue
         for u in await db.non_submitters(t, only_before_publish=False):
             pending.setdefault(u.id, []).append(t)
@@ -337,7 +382,8 @@ async def open_tests_reminder(bot: Bot, db: Database, cfg: Config, now: datetime
     await db.set_setting("open_reminder_at", to_db(now))
     ctx = ctx or _ReminderContext(db)
     for uid, tests in pending.items():
-        await safe_send(bot, uid, await open_reminder_text(ctx, cfg, uid, tests), kb.pending_tests_kb(tests[:15]))
+        tests.sort(key=lambda t: (t.deadline_at is None, t.deadline_at or t.published_at))  # muddati yaqini birinchi
+        await safe_send(bot, uid, await hourly_reminder_text(ctx, cfg, uid, tests, now), kb.pending_tests_kb(tests[:10]))
 
 
 # ---------------- kalitni tuzatish ----------------

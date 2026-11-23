@@ -25,9 +25,9 @@ bot avtomatik tekshiradi, tanga beradi va reyting tuzadi.
    Rejalashtirish»). Belgilangan vaqtda bot testni o'zi nashr qiladi; undan oldin «Hozir nashr qilish», vaqtni
    o'zgartirish, rejani bekor qilish yoki o'chirish mumkin.
 5. Ustozlar **✍️ Javob yuborish** → javoblar → tasdiqlash. Bot darhol natijani aytadi (`27/30`), javob faqat bir marta qabul qilinadi.
-6. Eslatmalar har **3 soatda** (tunda emas): muddatli testda har test bo'yicha, muddatsiz testlarda har bir ustozga
-   **bitta umumiy** xabar; muddatli testda muddatdan **1 soat** oldin oxirgi eslatma. Matnlar motivatsion va **har safar
-   har xil** (`bot/motivation.py`): tanga imkoniyati, reytingdagi o'rin, nechta guruhdoshi topshirgani.
+6. Eslatmalar **har soatda** (tunda emas): har bir ustozga topshirmagan barcha testlari bo'yicha **bitta** xabar —
+   qaysi mavzudan nechta test, muddati; matn uslubi har safar boshqa (ro'yxat, gap, challenge, vaqt hisobi, tanga,
+   guruhdoshlar va h.k., `bot/motivation.py`). Muddatli testda muddatdan **1 soat** oldin alohida oxirgi eslatma.
    Muddatsiz testda ustoz javob yuborishi bilan **xato savollar raqamini** ko'radi; to'g'ri javoblar va −5 jarima
    test yakunlanganda.
 7. Muddat tugaganda:

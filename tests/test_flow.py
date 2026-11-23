@@ -204,9 +204,10 @@ def test_full_flow():
         await services.send_reminders(bot, db, cfg, utcnow() + timedelta(hours=3, minutes=5))
         deadline_msgs = [m for m in session.sent if "1-hafta: Logarifmlar" in out_text(m)]
         assert [m.chat_id for m in deadline_msgs] == [U3]
-        assert "Muddat" in out_text(deadline_msgs[0]) and "tangagacha" in out_text(deadline_msgs[0])
+        assert "2-hafta" in out_text(deadline_msgs[0])                  # ikkala mavzu bitta xabarda
         open_msgs = [m for m in session.sent if "2-hafta" in out_text(m)]
         assert sorted(m.chat_id for m in open_msgs) == [U1, U2, U3]
+        assert len([m for m in session.sent if m.chat_id == U3]) == 1   # U3 ga ikkala test BITTA xabarda
 
         # --- muddat tugadi: yakunlash ---
         t1 = await db.get_test(t1.id)

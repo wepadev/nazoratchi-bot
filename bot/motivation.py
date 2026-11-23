@@ -98,3 +98,7 @@ TASK_PROMPTS = [
 
 def task_prompt(user_id: int) -> str:
     return pick(user_id, TASK_PROMPTS, "task")
+
+
+# soatlik test eslatmasining matn uslublari (har safar boshqasi)
+REMINDER_STYLES = ["list", "sentence", "total", "challenge", "time", "question", "coins", "peers"]
