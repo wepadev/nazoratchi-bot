@@ -21,7 +21,7 @@ from bot import texts as T
 from bot.config import Config
 from bot.db import Database
 from bot.excel import group_report
-from bot.handlers import appeals, common, groups, lessons, superadmin, tests_admin, user
+from bot.handlers import appeals, common, groups, lessons, superadmin, tasks, tests_admin, user
 from bot.middlewares import ContextMiddleware
 from bot.timeutil import utcnow, week_start
 
@@ -61,7 +61,7 @@ def build_dispatcher(db, cfg):
     mw = ContextMiddleware(db, cfg)
     dp.message.outer_middleware(mw)
     dp.callback_query.outer_middleware(mw)
-    routers = [common.router, superadmin.router, groups.router, tests_admin.router, appeals.router, lessons.router, user.router]
+    routers = [common.router, superadmin.router, groups.router, tests_admin.router, appeals.router, lessons.router, tasks.router, user.router]
     for r in routers:
         r._parent_router = None
     dp.include_routers(*routers)

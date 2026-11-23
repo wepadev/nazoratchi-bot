@@ -682,3 +682,75 @@ def schedule_summary(test: Test) -> str:
     else:
         dur = "♾ muddatsiz"
     return f"⏰ {fmt(test.publish_at)} da avtomatik nashr qilinadi · {dur}"
+
+
+
+# ---------------- kunlik vazifalar ----------------
+
+def task_window(day_offset: int, now: datetime, cfg: Config) -> tuple[str, datetime, datetime]:
+    """(kun 'YYYY-MM-DD', eslatma boshlanishi, kun oxiri) — Toshkent vaqti bo'yicha."""
+    loc = local(now) + timedelta(days=day_offset)
+    start = loc.replace(hour=cfg.task_day_start_hour, minute=0, second=0, microsecond=0)
+    end = loc.replace(hour=23, minute=59, second=59, microsecond=0)
+    starts_at = max(now, start.astimezone(now.tzinfo))
+    return loc.strftime("%Y-%m-%d"), starts_at, end.astimezone(now.tzinfo)
+
+
+def task_label(task) -> str:
+    return f"«{escape(task.text)}» ({task.day[8:10]}.{task.day[5:7]})"
+
+
+async def create_task(bot: Bot, db: Database, cfg: Config, group: Group, text: str, day_offset: int,
+                      admin: User, now: datetime):
+    day, starts_at, ends_at = task_window(day_offset, now, cfg)
+    task = await db.create_task(group.id, text, day, admin.id, now, starts_at, ends_at)
+    sent = 0
+    if task.is_active(now):  # bugungi vazifa — darhol e'lon
+        msg = (f"📋 <b>Yangi vazifa</b> ({escape(group.name)}):\n\n{escape(text)}\n\n"
+               "Bajarib bo'lgach «✅ Bajardim» ni bosing. Bajarmaguningizcha bot har soatda so'rab turadi.")
+        for m in await db.list_members(group.id):
+            sent += await safe_send(bot, m.id, msg, kb.task_check_kb([task]))
+    return task, sent
+
+
+async def task_reminders(bot: Bot, db: Database, cfg: Config, now: datetime) -> None:
+    """Har task_reminder_minutes da (tunda emas) bugungi vazifani bajarmaganlarga bitta xabar."""
+    if is_quiet(now, *cfg.quiet_hours):
+        return
+    interval = timedelta(minutes=cfg.task_reminder_minutes)
+    last = from_db(await db.get_setting("task_reminder_at"))
+    if last and now - last < interval:
+        return
+    pending: dict[int, list] = {}
+    for t in await db.active_tasks(now):
+        just_announced = t.starts_at - t.created_at < timedelta(minutes=1) and now - t.created_at < interval
+        if just_announced:
+            continue
+        for u, done in await db.task_roster(t):
+            if not done:
+                pending.setdefault(u.id, []).append(t)
+    if not pending:
+        return
+    await db.set_setting("task_reminder_at", to_db(now))
+    for uid, tasks in pending.items():
+        lines = [f"<b>{motivation.task_prompt(uid)}</b>", ""]
+        lines += [f"• {escape(t.text)}" for t in tasks[:10]]
+        lines += ["", "Bajargan bo'lsangiz — «✅ Bajardim» ni bosing."]
+        await safe_send(bot, uid, "\n".join(lines), kb.task_check_kb(tasks[:10]))
+
+
+async def task_summary(db: Database, task) -> str:
+    roster = await db.task_roster(task)
+    missing = [u for u, done in roster if not done]
+    lines = [f"📋 <b>{task_label(task)}</b>", f"Bajardi: <b>{len(roster) - len(missing)}</b> / {len(roster)}"]
+    if missing:
+        lines += ["", f"<b>Bajarmaganlar ({len(missing)}):</b>"]
+        lines += [f"• {escape(u.full_name)} — <code>{u.phone}</code>" for u in missing[:60]]
+    return "\n".join(lines)
+
+
+async def task_day_summaries(bot: Bot, db: Database, cfg: Config, now: datetime) -> None:
+    """Kun tugagach nazoratchilarga: kim bajarmadi."""
+    for t in await db.due_task_summaries(now):
+        if await db.set_task_summary_sent(t.id):
+            await notify_admins(bot, db, cfg, t.group_id, "🏁 Kunlik vazifa yakunlandi\n\n" + await task_summary(db, t))

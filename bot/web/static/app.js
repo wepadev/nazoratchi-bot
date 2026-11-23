@@ -112,6 +112,8 @@
     [/^appeals$/, () => appealsPage()],
     [/^lessons\/(\d+)$/, (id) => lessonsPage(+id)],
     [/^lesson\/(\d+)$/, (id) => lessonPage(+id)],
+    [/^tasks\/(\d+)$/, (id) => tasksPage(+id)],
+    [/^task\/(\d+)$/, (id) => taskPage(+id)],
   ];
 
   async function router() {
@@ -177,6 +179,9 @@
         <div class="h-sub" style="margin:4px 0 12px">«${esc(pendingLessons[0].title)}» — dars oxirida aytilgan 4 xonali kodni kiriting · ${fmtDate(pendingLessons[0].closes_at).split(" ")[1]} gacha</div>
         <div class="stepper"><input class="input" id="acode" inputmode="numeric" maxlength="4" placeholder="• • • •" style="letter-spacing:6px;font-size:20px">
         <button class="btn" id="asend" style="width:auto;padding:0 18px;font-size:16px">Yuborish</button></div></div></div>` : ""}
+      ${(HOME.tasks || []).length ? `<div class="section"><div class="label">📋 Bugungi vazifalar</div><div class="list">${HOME.tasks.map((k) => `
+        <div class="row"><div class="grow"><div class="t" style="white-space:normal">${esc(k.text)}</div></div>
+          ${k.done ? `<span class="chip ok">✅ Bajarildi</span>` : `<button class="btn" data-task="${k.id}" style="height:40px;padding:0 14px;font-size:14px">Bajardim</button>`}</div>`).join("")}</div></div>` : ""}
       <div class="section"><div class="label">Faol testlar</div>${active}</div>
       ${g ? `<div class="section"><button class="btn ghost block" data-go="/rating/${g.id}">🏆 Reytingni ko'rish</button></div>` : ""}
       <div class="section"><div class="label">Natijalarim</div>${recent}</div>
@@ -188,6 +193,11 @@
 
     $app.querySelectorAll("[data-g]").forEach((b) => b.onclick = () => { store.set("group", +b.dataset.g); haptic(); ustozHome(); });
     $app.querySelectorAll("[data-video]").forEach((b) => b.onclick = () => openUrl(b.dataset.video));
+    $app.querySelectorAll("[data-task]").forEach((b) => b.onclick = async () => {
+      b.disabled = true;
+      try { await post(`/api/tasks/${b.dataset.task}/done`); haptic("ok"); toast("✅ Barakalla! Belgilab qo'ydim."); ustozHome().catch(showError); }
+      catch (e) { b.disabled = false; toast(e.message); }
+    });
     if (pendingLessons.length) {  // muddat tugashi bilan maydon yo'qolsin
       const ms = Math.min(...pendingLessons.map((l) => new Date(l.closes_at) - Date.now())) + 1000;
       timers.push(setTimeout(() => { if (!location.hash.replace(/^#\/?/, "")) ustozHome().catch(showError); }, Math.min(ms, 2 ** 31 - 1)));
@@ -434,6 +444,7 @@
         ${abtn("🏆", "Reyting", `data-go="/rating/${g.id}"`)}
         ${abtn("📥", "Excel", `id="excel"`)}
         ${abtn("🎥", "Jonli darslar", `data-go="/lessons/${g.id}"`)}
+        ${abtn("📋", "Kunlik vazifalar", `data-go="/tasks/${g.id}"`)}
         ${abtn("🔄", "Yangi kod", `id="code"`)}
         ${sup ? abtn("👮", "Nazoratchilar", `data-go="/ga/${g.id}"`) : ""}
         ${sup ? abtn("✏️", "Nomini o'zgartirish", `id="rename"`) : ""}
@@ -921,6 +932,73 @@
       document.getElementById("ldel").onclick = async () => {
         if (!(await confirmBox("Bu dars va uning davomati o'chirilsinmi?"))) return;
         try { await del(`/api/admin/lessons/${id}`); toast("O'chirildi"); go(`/lessons/${l.group_id}`); } catch (e) { toast(e.message); }
+      };
+    };
+    draw();
+  }
+
+  // ================= KUNLIK VAZIFALAR =================
+  const dayLbl = (d) => `${d.slice(8, 10)}.${d.slice(5, 7)}`;
+
+  async function tasksPage(gid) {
+    const d = await api(`/api/admin/groups/${gid}/tasks`);
+    let day = 0;
+    const list = d.tasks.length ? `<div class="list">${d.tasks.map((t) => {
+      const st = t.active ? `<span class="chip brand">bugun</span>` : t.upcoming ? `<span class="chip accent">rejada</span>` : "";
+      const pct = t.total ? Math.round(100 * t.done / t.total) : 0;
+      return `<button class="row" data-go="/task/${t.id}"><div class="grow"><div class="t">${esc(t.text)}</div>
+        <div class="s">${dayLbl(t.day)} · bajardi ${t.done}/${t.total}</div></div>${st}
+        <span class="chip ${pct >= 90 ? "ok" : pct >= 50 ? "muted" : "bad"}">${pct}%</span><span class="chev">›</span></button>`;
+    }).join("")}</div>` : `<div class="card empty">Hali vazifa yo'q.</div>`;
+    render(`<div class="h-title">📋 Kunlik vazifalar</div><div class="h-sub">${esc(d.group.name)}</div>
+      <div class="section"><div class="card">
+        <div class="title" style="font-weight:700;margin-bottom:12px">➕ Yangi vazifa</div>
+        <label class="field"><span>Vazifa matni</span><textarea class="input" id="ttext" maxlength="500"
+          placeholder="Masalan: Darslikning 45-betidagi 1–20 misollarni yeching"></textarea></label>
+        <div class="field"><span>Qaysi kun uchun</span><div class="chips">
+          <button class="pick on" data-day="0">📅 Bugun</button><button class="pick" data-day="1">📅 Ertaga</button></div></div>
+        <button class="btn block" id="tadd">Qo'shish</button>
+        <p class="note" style="text-align:left">Ustozlar «✅ Bajardim» bosguncha bot har soatda so'raydi (tunda emas). Kun oxirida bajarmaganlar ro'yxati sizga keladi.</p>
+      </div></div>
+      <div class="section"><div class="label">Vazifalar</div>${list}</div>`);
+    $app.querySelectorAll("[data-day]").forEach((b) => b.onclick = () => {
+      day = +b.dataset.day; $app.querySelectorAll("[data-day]").forEach((x) => x.classList.toggle("on", x === b)); haptic();
+    });
+    document.getElementById("tadd").onclick = async () => {
+      const text = document.getElementById("ttext").value.trim();
+      if (text.length < 3) return toast("Vazifa matnini yozing");
+      try {
+        const r = await post(`/api/admin/groups/${gid}/tasks`, { text, day });
+        haptic("ok"); toast(day === 0 ? `Qo'shildi, ${r.sent} ta ustozga yuborildi` : "Qo'shildi — ertaga ertalabdan so'raladi");
+        tasksPage(gid);
+      } catch (e) { haptic("err"); toast(e.message); }
+    };
+  }
+
+  async function taskPage(id) {
+    const t = await api(`/api/admin/tasks/${id}`);
+    let tab = "missing";
+    const draw = () => {
+      const missing = t.people.filter((p) => !p.done), done = t.people.filter((p) => p.done);
+      const shown = tab === "missing" ? missing : done;
+      render(`<div class="h-title">📋 ${esc(t.text)}</div>
+        <div class="h-sub">${dayLbl(t.day)} · ${t.active ? "bugun — bajarmaganlardan har soatda so'ralyapti" : t.upcoming ? "rejada" : "kun tugagan"}</div>
+        <div class="section" style="margin-top:14px"><div class="tiles">
+          <div class="tile"><div class="v">${done.length}</div><div class="k">bajardi</div></div>
+          <div class="tile"><div class="v">${missing.length}</div><div class="k">bajarmadi</div></div>
+          <div class="tile"><div class="v">${t.total ? Math.round(100 * done.length / t.total) : 0}%</div><div class="k">bajarilish</div></div></div></div>
+        <div class="section"><div class="seg"><button data-t="missing" class="${tab === "missing" ? "on" : ""}">Bajarmadi · ${missing.length}</button>
+          <button data-t="done" class="${tab === "done" ? "on" : ""}">Bajardi · ${done.length}</button></div></div>
+        <div class="section" style="margin-top:12px">${shown.length ? `<div class="list">${shown.map((p) => `
+          <div class="row"><div class="grow"><div class="t">${esc(p.name)}</div><div class="s">${esc(p.phone)}</div></div>
+          ${p.done ? `<span class="chip ok">✓</span>` : `<span class="chip bad">—</span>`}</div>`).join("")}</div>`
+          : `<div class="card empty">${tab === "missing" ? "Hamma bajargan 👏" : "Hali hech kim bajarmagan."}</div>`}</div>
+        <div class="section"><div class="btn-row"><button class="btn ghost" data-go="/tasks/${t.group_id}">Vazifalar</button>
+          <button class="btn line" id="tdel2">O'chirish</button></div></div>`);
+      $app.querySelectorAll("[data-t]").forEach((b) => b.onclick = () => { tab = b.dataset.t; draw(); });
+      document.getElementById("tdel2").onclick = async () => {
+        if (!(await confirmBox("Vazifa o'chirilsinmi? Eslatmalar to'xtaydi."))) return;
+        try { await del(`/api/admin/tasks/${id}`); toast("O'chirildi"); go(`/tasks/${t.group_id}`); } catch (e) { toast(e.message); }
       };
     };
     draw();

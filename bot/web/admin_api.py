@@ -490,6 +490,7 @@ def setup(app: web.Application) -> None:
     r.add_get("/api/admin/appeals", appeals)
     r.add_post(r"/api/admin/appeals/{appeal_id:\d+}", resolve_appeal)
     setup_lessons(app)
+    setup_tasks(app)
 
 
 # ======================= jonli darslar =======================
@@ -664,3 +665,75 @@ def setup_lessons(app: web.Application) -> None:
     r.add_delete(r"/api/admin/lessons/{lesson_id:\d+}", delete_lesson)
     r.add_post("/api/admin/attendance/excel", attendance_excel)
     r.add_post(r"/api/admin/lessons/{lesson_id:\d+}/video", lesson_video)
+
+
+
+# ======================= kunlik vazifalar =======================
+
+async def task_json(db, t, now) -> dict:
+    roster = await db.task_roster(t)
+    return {"id": t.id, "group_id": t.group_id, "text": t.text, "day": t.day, "active": t.is_active(now),
+            "upcoming": now < t.starts_at, "done": sum(1 for _, d in roster if d), "total": len(roster)}
+
+
+@admin_only
+async def group_tasks(request: web.Request) -> web.Response:
+    db = request.app[K_DB]
+    g = await managed_group(request)
+    if not g:
+        return err(403, *NO_ACCESS)
+    now = utcnow()
+    return web.json_response({"group": {"id": g.id, "name": g.name},
+                              "tasks": [await task_json(db, t, now) for t in await db.list_tasks(g.id, limit=60)]})
+
+
+@admin_only
+async def create_task(request: web.Request) -> web.Response:
+    db = request.app[K_DB]
+    g = await managed_group(request)
+    if not g:
+        return err(403, *NO_ACCESS)
+    data = await body(request)
+    text = str(data.get("text") or "").strip()
+    if not (3 <= len(text) <= 500):
+        return err(400, "bad_text", "Vazifa matni 3–500 belgi bo'lishi kerak.")
+    day = data.get("day", 0)
+    if day not in (0, 1):
+        return err(400, "bad_day", "Kunni tanlang: bugun yoki ertaga.")
+    now = utcnow()
+    task, sent = await services.create_task(request.app[K_BOT], db, request.app[K_CFG], g, text, day,
+                                            request[R_USER], now)
+    return web.json_response(await task_json(db, task, now) | {"sent": sent})
+
+
+async def managed_task(request: web.Request):
+    db = request.app[K_DB]
+    t = await db.get_task(int(request.match_info["task_id"]))
+    return t if t and await can_manage(db, request, t.group_id) else None
+
+
+@admin_only
+async def get_task(request: web.Request) -> web.Response:
+    db = request.app[K_DB]
+    t = await managed_task(request)
+    if not t:
+        return err(403, *NO_ACCESS)
+    people = [{"id": u.id, "name": u.full_name, "phone": u.phone, "done": d} for u, d in await db.task_roster(t)]
+    return web.json_response(await task_json(db, t, utcnow()) | {"people": people})
+
+
+@admin_only
+async def delete_task(request: web.Request) -> web.Response:
+    t = await managed_task(request)
+    if not t:
+        return err(403, *NO_ACCESS)
+    await request.app[K_DB].delete_task(t.id)
+    return web.json_response({"ok": True, "group_id": t.group_id})
+
+
+def setup_tasks(app: web.Application) -> None:
+    r = app.router
+    r.add_get(r"/api/admin/groups/{group_id:\d+}/tasks", group_tasks)
+    r.add_post(r"/api/admin/groups/{group_id:\d+}/tasks", create_task)
+    r.add_get(r"/api/admin/tasks/{task_id:\d+}", get_task)
+    r.add_delete(r"/api/admin/tasks/{task_id:\d+}", delete_task)

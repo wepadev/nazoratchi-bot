@@ -125,6 +125,27 @@ CREATE TABLE IF NOT EXISTS attendance (
     PRIMARY KEY (lesson_id, user_id)
 );
 
+-- kunlik vazifalar: nazoratchi qo'yadi, ustozlar "Bajardim" bosguncha har soatda so'raladi
+CREATE TABLE IF NOT EXISTS tasks (
+    id            INTEGER PRIMARY KEY AUTOINCREMENT,
+    group_id      INTEGER NOT NULL REFERENCES groups(id) ON DELETE CASCADE,
+    text          TEXT    NOT NULL,
+    day           TEXT    NOT NULL,                -- YYYY-MM-DD (Toshkent)
+    created_by    INTEGER NOT NULL,
+    created_at    TEXT    NOT NULL,
+    starts_at     TEXT    NOT NULL,                -- eslatmalar shu vaqtdan
+    ends_at       TEXT    NOT NULL,                -- kun oxiri
+    summary_sent  INTEGER NOT NULL DEFAULT 0
+);
+CREATE INDEX IF NOT EXISTS idx_tasks_group ON tasks(group_id, day);
+
+CREATE TABLE IF NOT EXISTS task_done (
+    task_id   INTEGER NOT NULL REFERENCES tasks(id) ON DELETE CASCADE,
+    user_id   INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    done_at   TEXT    NOT NULL,
+    PRIMARY KEY (task_id, user_id)
+);
+
 CREATE TABLE IF NOT EXISTS settings (
     key   TEXT PRIMARY KEY,
     value TEXT
@@ -221,6 +242,33 @@ class Lesson:
 
     def is_open(self, now: datetime) -> bool:
         return self.closed_at is None and self.closes_at > now
+
+
+@dataclass
+class Task:
+    id: int
+    group_id: int
+    text: str
+    day: str
+    created_by: int
+    created_at: datetime
+    starts_at: datetime
+    ends_at: datetime
+    summary_sent: bool = False
+
+    def is_active(self, now: datetime) -> bool:
+        return self.starts_at <= now < self.ends_at
+
+
+_TASK_COLS = "k.id, k.group_id, k.text, k.day, k.created_by, k.created_at, k.starts_at, k.ends_at, k.summary_sent"
+
+
+def _task(row) -> Task:
+    d = dict(row)
+    for key in ("created_at", "starts_at", "ends_at"):
+        d[key] = from_db(d[key])
+    d["summary_sent"] = bool(d["summary_sent"])
+    return Task(**d)
 
 
 _USER_COLS = "u.id, u.phone, u.full_name, u.username, u.role"
@@ -814,6 +862,70 @@ class Database:
         att = await self._all("SELECT a.lesson_id, a.user_id FROM attendance a JOIN lessons l ON l.id = a.lesson_id "
                               "WHERE l.group_id = ?", (group_id,))
         return lessons, members, {(r["lesson_id"], r["user_id"]) for r in att}
+
+    # ================= kunlik vazifalar =================
+    async def create_task(self, group_id: int, text: str, day: str, created_by: int, now: datetime,
+                          starts_at: datetime, ends_at: datetime) -> Task:
+        cur = await self._exec(
+            "INSERT INTO tasks (group_id, text, day, created_by, created_at, starts_at, ends_at) VALUES (?,?,?,?,?,?,?)",
+            (group_id, text, day, created_by, to_db(now), to_db(starts_at), to_db(ends_at)))
+        task = await self.get_task(cur.lastrowid)
+        assert task
+        return task
+
+    async def get_task(self, task_id: int) -> Task | None:
+        row = await self._one(f"SELECT {_TASK_COLS} FROM tasks k WHERE k.id = ?", (task_id,))
+        return _task(row) if row else None
+
+    async def list_tasks(self, group_id: int, limit: int = 60) -> list[Task]:
+        rows = await self._all(f"SELECT {_TASK_COLS} FROM tasks k WHERE k.group_id = ? "
+                               "ORDER BY k.day DESC, k.id DESC LIMIT ?", (group_id, limit))
+        return [_task(r) for r in rows]
+
+    async def delete_task(self, task_id: int) -> None:
+        await self._exec("DELETE FROM tasks WHERE id = ?", (task_id,))
+
+    async def mark_task_done(self, task_id: int, user_id: int, now: datetime) -> bool:
+        cur = await self._exec("INSERT OR IGNORE INTO task_done (task_id, user_id, done_at) VALUES (?, ?, ?)",
+                               (task_id, user_id, to_db(now)))
+        return cur.rowcount > 0
+
+    async def task_roster(self, task: Task) -> list[tuple[User, bool]]:
+        """Vazifa kuni guruhda bo'lgan a'zolar va bajarganmi."""
+        rows = await self._all(
+            f"""SELECT {_USER_COLS}, EXISTS(SELECT 1 FROM task_done d WHERE d.task_id = ? AND d.user_id = u.id) AS done
+                FROM group_members m JOIN users u ON u.id = m.user_id
+                WHERE m.group_id = ? AND m.joined_at <= ? ORDER BY u.full_name""",
+            (task.id, task.group_id, to_db(task.ends_at)))
+        return [(_user(r), bool(r["done"])) for r in rows]
+
+    async def user_tasks(self, user_id: int, now: datetime) -> list[tuple[Task, bool]]:
+        """Ustozning hozir faol (bugungi) vazifalari va bajarganmi."""
+        rows = await self._all(
+            f"""SELECT {_TASK_COLS}, EXISTS(SELECT 1 FROM task_done d WHERE d.task_id = k.id AND d.user_id = ?) AS done
+                FROM tasks k JOIN group_members m ON m.group_id = k.group_id
+                WHERE m.user_id = ? AND k.starts_at <= ? AND k.ends_at > ? ORDER BY k.id""",
+            (user_id, user_id, to_db(now), to_db(now)))
+        out = []
+        for r in rows:
+            d = dict(r)
+            done = bool(d.pop("done"))
+            out.append((_task(d), done))
+        return out
+
+    async def active_tasks(self, now: datetime) -> list[Task]:
+        rows = await self._all(f"SELECT {_TASK_COLS} FROM tasks k WHERE k.starts_at <= ? AND k.ends_at > ?",
+                               (to_db(now), to_db(now)))
+        return [_task(r) for r in rows]
+
+    async def due_task_summaries(self, now: datetime) -> list[Task]:
+        rows = await self._all(f"SELECT {_TASK_COLS} FROM tasks k WHERE k.summary_sent = 0 AND k.ends_at <= ?",
+                               (to_db(now),))
+        return [_task(r) for r in rows]
+
+    async def set_task_summary_sent(self, task_id: int) -> bool:
+        cur = await self._exec("UPDATE tasks SET summary_sent = 1 WHERE id = ? AND summary_sent = 0", (task_id,))
+        return cur.rowcount > 0
 
     # ================= settings =================
     async def get_setting(self, key: str) -> str | None:

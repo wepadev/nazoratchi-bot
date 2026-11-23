@@ -336,6 +336,46 @@ async def attend_quick(message: Message, db: Database, config: Config, user: Use
     await message.answer(services.attend_reply(status, lessons, config))
 
 
+# ---------------- kunlik vazifalar ----------------
+
+@router.message(F.text == T.BTN_TASKS)
+async def my_tasks(message: Message, db: Database, user: User):
+    items = await db.user_tasks(user.id, utcnow())
+    if not items:
+        return await message.answer("📋 Bugun uchun vazifa yo'q. Nazoratchi vazifa qo'shganda bot xabar beradi. 🔔")
+    lines = ["📋 <b>Bugungi vazifalar</b>", ""]
+    lines += [f"{'✅' if done else '⬜️'} {escape(t.text)}" for t, done in items]
+    pending = [t for t, done in items if not done]
+    if not pending:
+        lines += ["", "🎉 Hammasi bajarilgan, barakalla!"]
+    await message.answer("\n".join(lines), reply_markup=kb.task_check_kb(pending) if pending else None)
+
+
+@router.callback_query(kb.TaskCb.filter(F.action == "done"))
+async def task_done(call: CallbackQuery, callback_data: kb.TaskCb, db: Database, user: User):
+    t = await db.get_task(callback_data.task_id)
+    now = utcnow()
+    if not t or not await db.is_member(t.group_id, user.id):
+        return await call.answer("Vazifa topilmadi.", show_alert=True)
+    if now >= t.ends_at:
+        return await call.answer("Bu vazifaning kuni tugagan.", show_alert=True)
+    await db.mark_task_done(t.id, user.id, now)
+    await call.answer("✅ Barakalla! Belgilab qo'ydim.")
+    pending = [x for x, done in await db.user_tasks(user.id, now) if not done]
+    try:
+        if pending:
+            await call.message.edit_reply_markup(reply_markup=kb.task_check_kb(pending))
+        else:
+            await call.message.edit_text(call.message.html_text + "\n\n✅ <b>Barcha vazifalar bajarildi!</b> 🎉")
+    except Exception:  # eski xabar tahrirlanmasa ham belgi saqlandi
+        pass
+
+
+@router.callback_query(kb.TaskCb.filter(F.action == "later"))
+async def task_later(call: CallbackQuery):
+    await call.answer("Mayli 🙂 Birozdan keyin yana so'rayman.")
+
+
 # ---------------- dars yozuvlari ----------------
 
 @router.message(F.text == T.BTN_RECORDINGS)

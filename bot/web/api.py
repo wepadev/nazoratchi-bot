@@ -110,10 +110,11 @@ async def home(request: web.Request) -> web.Response:
     cfg = request.app[K_CFG]
     recordings = [{"id": l.id, "title": l.title, "date": iso(l.created_at), "url": l.video_url}
                   for l in await db.user_recordings(u.id, limit=30)]
+    tasks = [{"id": t.id, "text": t.text, "done": done} for t, done in await db.user_tasks(u.id, utcnow())]
     open_lessons = [{"id": l.id, "title": l.title, "closes_at": iso(l.closes_at), "attended": att}
                     for l, att in await db.open_lessons_for_user(u.id, utcnow())]  # kod yuborilmaydi
     return web.json_response({"groups": groups, "active": active, "recent": recent[:15], "recordings": recordings,
-                              "lessons": open_lessons,
+                              "lessons": open_lessons, "tasks": tasks,
                               "rules": {"per_correct": cfg.coins_per_correct, "penalty": cfg.penalty_not_submitted,
                                         "per_lesson": cfg.coins_per_lesson, "missed_lesson": cfg.penalty_missed_lesson}})
 
@@ -198,6 +199,19 @@ async def attend(request: web.Request) -> web.Response:
     if status in ("wrong", "blocked"):
         return err(429 if status == "blocked" else 404, status, text)
     return web.json_response({"status": status, "message": text})
+
+
+async def task_done(request: web.Request) -> web.Response:
+    db = request.app[K_DB]
+    u: User = request[R_USER]
+    t = await db.get_task(int(request.match_info["task_id"]))
+    now = utcnow()
+    if not t or not await db.is_member(t.group_id, u.id):
+        return err(404, "not_found", "Vazifa topilmadi.")
+    if now >= t.ends_at:
+        return err(409, "expired", "Bu vazifaning kuni tugagan.")
+    await db.mark_task_done(t.id, u.id, now)
+    return web.json_response({"ok": True})
 
 
 async def body_json(request: web.Request) -> dict:
@@ -294,6 +308,7 @@ def create_app(db: Database, bot: Bot, cfg: Config) -> web.Application:
     app.router.add_get("/api/me", me)
     app.router.add_get("/api/home", home)
     app.router.add_post("/api/attend", attend)
+    app.router.add_post(r"/api/tasks/{task_id:\d+}/done", task_done)
     app.router.add_get(r"/api/tests/{test_id:\d+}", get_test)
     app.router.add_post(r"/api/tests/{test_id:\d+}/submit", submit_test)
     app.router.add_get(r"/api/groups/{group_id:\d+}/rating", rating)

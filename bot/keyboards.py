@@ -58,6 +58,12 @@ class LessonCb(CallbackData, prefix="l"):
     arg: int = 0
 
 
+class TaskCb(CallbackData, prefix="k"):
+    action: str  # done | later (ustoz) · open | del | del_ok | day (nazoratchi)
+    task_id: int = 0
+    arg: int = 0
+
+
 class AdminCb(CallbackData, prefix="a"):
     action: str  # add | remove
     user_id: int = 0
@@ -91,8 +97,8 @@ def main_menu(is_admin: bool, is_super: bool) -> ReplyKeyboardMarkup:
                     [T.BTN_APPEALS, T.BTN_PROFILE]])
     if is_admin:
         return _kb([[T.BTN_GROUPS, T.BTN_APPEALS], [T.BTN_PROFILE]])
-    return _kb([[T.BTN_TESTS, T.BTN_RATING], [T.BTN_ATTEND, T.BTN_RECORDINGS],
-                [T.BTN_JOIN, T.BTN_MY_GROUPS], [T.BTN_PROFILE]])
+    return _kb([[T.BTN_TESTS, T.BTN_TASKS], [T.BTN_ATTEND, T.BTN_RECORDINGS],
+                [T.BTN_RATING, T.BTN_MY_GROUPS], [T.BTN_JOIN, T.BTN_PROFILE]])
 
 
 # ---------------- inline klaviaturalar ----------------
@@ -117,7 +123,8 @@ def group_kb(group_id: int, is_super: bool) -> InlineKeyboardMarkup:
     items = [
         ("📝 Testlar", g("tests")), ("🏆 Reyting", g("rating")),
         ("👥 Ustozlar", g("members")), ("🪙 Tanga berish", g("coins")),
-        ("🎥 Jonli dars", g("lessons")), ("📥 Excel", g("excel")),
+        ("🎥 Jonli dars", g("lessons")), ("📋 Vazifalar", g("tasks")),
+        ("📥 Excel", g("excel")),
         ("🔄 Yangi kod", g("code")),
     ]
     if is_super:
@@ -297,3 +304,33 @@ def recordings_kb(lessons) -> InlineKeyboardMarkup:
     from .timeutil import local
     rows = [[InlineKeyboardButton(text=f"▶️ {local(l.created_at):%d.%m} · {l.title}", url=l.video_url)] for l in lessons]
     return InlineKeyboardMarkup(inline_keyboard=rows)
+
+
+def _short(text: str, n: int = 28) -> str:
+    return text if len(text) <= n else text[: n - 1] + "…"
+
+
+def task_check_kb(tasks) -> InlineKeyboardMarkup:
+    """Ustozga: har bir bajarilmagan vazifa uchun «Bajardim» + «Hali yo'q»."""
+    rows = [[InlineKeyboardButton(text=f"✅ Bajardim: {_short(t.text)}" if len(tasks) > 1 else "✅ Bajardim",
+                                  callback_data=TaskCb(action="done", task_id=t.id).pack())] for t in tasks]
+    rows.append([InlineKeyboardButton(text="⏳ Hali yo'q", callback_data=TaskCb(action="later").pack())])
+    return InlineKeyboardMarkup(inline_keyboard=rows)
+
+
+def tasks_kb(group_id: int, tasks) -> InlineKeyboardMarkup:
+    items = [("➕ Yangi vazifa", GroupCb(action="newtask", group_id=group_id))]
+    items += [(f"📋 {t.day[8:10]}.{t.day[5:7]} · {_short(t.text, 34)}", TaskCb(action="open", task_id=t.id))
+              for t in tasks]
+    items.append((BACK, GroupCb(action="open", group_id=group_id)))
+    return _build(items)
+
+
+def task_day_kb() -> InlineKeyboardMarkup:
+    return _build([("📅 Bugun", TaskCb(action="day", arg=0)), ("📅 Ertaga", TaskCb(action="day", arg=1))], 2)
+
+
+def task_admin_kb(task) -> InlineKeyboardMarkup:
+    return _build([("🔄 Yangilash", TaskCb(action="open", task_id=task.id, arg=1)),
+                   ("🗑 O'chirish", TaskCb(action="del", task_id=task.id)),
+                   (BACK, GroupCb(action="tasks", group_id=task.group_id))], [2, 1])

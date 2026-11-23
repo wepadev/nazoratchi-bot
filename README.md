@@ -62,6 +62,15 @@ bot avtomatik tekshiradi, tanga beradi va reyting tuzadi.
   Nazoratchi qo'lda belgilasa yoki belgini olsa, farq avtomatik to'g'rilanadi; dars o'chirilsa, uning tangalari ham o'chadi.
   `COINS_PER_LESSON`, `PENALTY_MISSED_LESSON` bilan o'zgartiriladi.
 
+## Kunlik vazifalar
+
+- Nazoratchi guruhga vazifa qo'shadi (bot: guruh → 📋 Vazifalar; Mini App: guruh → 📋 Kunlik vazifalar), masalan
+  «Darslikning 45-betidagi 1–20 misollarni yeching» — **bugun** yoki **ertaga** uchun.
+- Bugungi vazifa darhol ustozlarga yuboriladi («✅ Bajardim» / «⏳ Hali yo'q»); ertangisi ertalab soat 8:00 dan.
+- Bajarmaganlardan **har soatda** (tunda emas) bitta xabarda so'raladi; savol har safar boshqacha.
+- Ustoz: botdagi «📋 Vazifalar» yoki Mini App bosh sahifasidagi «Bajardim».
+- Nazoratchi kim bajargan/bajarmaganini ko'radi; kun oxirida bajarmaganlar ro'yxati keladi. Tanga berilmaydi.
+
 ## Tanga va reyting
 
 - Har bir to'g'ri javob: **+1**, topshirmaslik: **−5**; jonli dars: qatnashish **+10**, qoldirish **0** (`.env` da o'zgartiriladi).
