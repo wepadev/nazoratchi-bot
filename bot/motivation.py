@@ -83,16 +83,16 @@ def cta(user_id: int) -> str:
 
 
 TASK_PROMPTS = [
-    "📋 Bugungi vazifani bajardingizmi?",
-    "🤔 Xo'sh, bugungi vazifa qalay — bajarildimi?",
-    "⏰ Eslatib qo'yaman: bugungi vazifa sizni kutyapti.",
-    "💪 Bugungi vazifa — bugun bajariladi! Qildingizmi?",
-    "📌 Kichik savol: bugungi vazifa tayyormi?",
-    "🙂 Bugungi rejadagi vazifani bajarib bo'ldingizmi?",
-    "🎯 Maqsad sari bugungi qadam: vazifa bajarildimi?",
-    "☕️ Bir piyola choy va bugungi vazifa — qildingizmi?",
-    "🔔 Bugun qilinishi kerak bo'lgan ish esingizdami?",
-    "🧠 Bilim har kuni mustahkamlanadi. Vazifani bajardingizmi?",
+    "📋 Eslatma: bugungi vazifa",
+    "⏰ Unutmang — bugun qilinishi kerak:",
+    "🔔 Bugungi rejangizda:",
+    "📌 Esingizda bo'lsin:",
+    "💪 Bugungi kichik qadam:",
+    "🎯 Bugungi maqsad:",
+    "☕️ Bir piyola choy va bugungi vazifa:",
+    "🧠 Bilim har kuni mustahkamlanadi — bugun:",
+    "🚀 Ertangi natija bugungi ishdan boshlanadi:",
+    "🙂 Yana bir bor eslatib qo'yaman:",
 ]
 
 

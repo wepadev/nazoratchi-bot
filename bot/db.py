@@ -885,47 +885,17 @@ class Database:
     async def delete_task(self, task_id: int) -> None:
         await self._exec("DELETE FROM tasks WHERE id = ?", (task_id,))
 
-    async def mark_task_done(self, task_id: int, user_id: int, now: datetime) -> bool:
-        cur = await self._exec("INSERT OR IGNORE INTO task_done (task_id, user_id, done_at) VALUES (?, ?, ?)",
-                               (task_id, user_id, to_db(now)))
-        return cur.rowcount > 0
-
-    async def task_roster(self, task: Task) -> list[tuple[User, bool]]:
-        """Vazifa kuni guruhda bo'lgan a'zolar va bajarganmi."""
+    async def task_members(self, task: Task) -> list[User]:
+        """Eslatma kuni guruhda bo'lgan ustozlar."""
         rows = await self._all(
-            f"""SELECT {_USER_COLS}, EXISTS(SELECT 1 FROM task_done d WHERE d.task_id = ? AND d.user_id = u.id) AS done
-                FROM group_members m JOIN users u ON u.id = m.user_id
-                WHERE m.group_id = ? AND m.joined_at <= ? ORDER BY u.full_name""",
-            (task.id, task.group_id, to_db(task.ends_at)))
-        return [(_user(r), bool(r["done"])) for r in rows]
-
-    async def user_tasks(self, user_id: int, now: datetime) -> list[tuple[Task, bool]]:
-        """Ustozning hozir faol (bugungi) vazifalari va bajarganmi."""
-        rows = await self._all(
-            f"""SELECT {_TASK_COLS}, EXISTS(SELECT 1 FROM task_done d WHERE d.task_id = k.id AND d.user_id = ?) AS done
-                FROM tasks k JOIN group_members m ON m.group_id = k.group_id
-                WHERE m.user_id = ? AND k.starts_at <= ? AND k.ends_at > ? ORDER BY k.id""",
-            (user_id, user_id, to_db(now), to_db(now)))
-        out = []
-        for r in rows:
-            d = dict(r)
-            done = bool(d.pop("done"))
-            out.append((_task(d), done))
-        return out
+            f"SELECT {_USER_COLS} FROM group_members m JOIN users u ON u.id = m.user_id "
+            "WHERE m.group_id = ? AND m.joined_at <= ? ORDER BY u.full_name", (task.group_id, to_db(task.ends_at)))
+        return [_user(r) for r in rows]
 
     async def active_tasks(self, now: datetime) -> list[Task]:
         rows = await self._all(f"SELECT {_TASK_COLS} FROM tasks k WHERE k.starts_at <= ? AND k.ends_at > ?",
                                (to_db(now), to_db(now)))
         return [_task(r) for r in rows]
-
-    async def due_task_summaries(self, now: datetime) -> list[Task]:
-        rows = await self._all(f"SELECT {_TASK_COLS} FROM tasks k WHERE k.summary_sent = 0 AND k.ends_at <= ?",
-                               (to_db(now),))
-        return [_task(r) for r in rows]
-
-    async def set_task_summary_sent(self, task_id: int) -> bool:
-        cur = await self._exec("UPDATE tasks SET summary_sent = 1 WHERE id = ? AND summary_sent = 0", (task_id,))
-        return cur.rowcount > 0
 
     # ================= settings =================
     async def get_setting(self, key: str) -> str | None:

@@ -22,8 +22,6 @@ async def tick(bot: Bot, db: Database, cfg: Config, now: datetime) -> None:
     for lesson in await db.due_lessons(now):
         await services.close_lesson(bot, db, cfg, lesson, now)
     await services.send_reminders(bot, db, cfg, now)
-    await services.task_reminders(bot, db, cfg, now)
-    await services.task_day_summaries(bot, db, cfg, now)
     await services.weekly_rating(bot, db, cfg, now)
 
 

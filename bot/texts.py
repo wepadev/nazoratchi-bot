@@ -16,7 +16,6 @@ BTN_CANCEL = "✖️ Bekor qilish"
 BTN_SKIP = "⏭ O'tkazib yuborish"
 BTN_ATTEND = "🎥 Davomat"
 BTN_RECORDINGS = "📺 Dars yozuvlari"
-BTN_TASKS = "📋 Vazifalar"
 BTN_AUTO_CODE = "🎲 Avtomatik kod"
 
 # ---- Ro'yxatdan o'tish ----

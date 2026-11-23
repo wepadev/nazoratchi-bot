@@ -20,8 +20,6 @@ class Config:
     penalty_missed_lesson: int = 0            # jonli darsni qoldirgani uchun (0 — jarima yo'q)
     weekly_rating_weekday: int = 0            # 0 = dushanba
     weekly_rating_hour: int = 9
-    task_reminder_minutes: int = 60            # kunlik vazifa: "bajardingizmi?" so'rash oralig'i
-    task_day_start_hour: int = 8               # ertangi vazifalar eslatmasi shu soatdan boshlanadi
     web_port: int = 8080                      # Mini App serveri porti
     webapp_url: str = ""                       # Mini App'ning ochiq HTTPS manzili
 
@@ -53,8 +51,6 @@ def load_config() -> Config:
         coins_per_lesson=int(os.getenv("COINS_PER_LESSON", "10")),
         penalty_missed_lesson=int(os.getenv("PENALTY_MISSED_LESSON", "0")),
         weekly_rating_hour=int(os.getenv("WEEKLY_RATING_HOUR", "9")),
-        task_reminder_minutes=int(os.getenv("TASK_REMINDER_MINUTES", "60")),
-        task_day_start_hour=int(os.getenv("TASK_DAY_START_HOUR", "8")),
         web_port=int(os.getenv("PORT", "8080")),
         webapp_url=os.getenv("WEBAPP_URL", "").strip().rstrip("/"),
     )

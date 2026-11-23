@@ -12,7 +12,7 @@ from .timeutil import utcnow
 from .db import Database
 from . import keyboards, scheduler
 from .web.api import start_server
-from .handlers import appeals, common, groups, lessons, superadmin, tasks, tests_admin, user
+from .handlers import appeals, common, groups, lessons, superadmin, tests_admin, user
 from .middlewares import ContextMiddleware
 
 
@@ -35,7 +35,7 @@ async def main() -> None:
 
     # Tartib muhim: avval umumiy (start / bekor qilish / ro'yxatdan o'tish)
     dp.include_routers(common.router, superadmin.router, groups.router, tests_admin.router,
-                       appeals.router, lessons.router, tasks.router, user.router)
+                       appeals.router, lessons.router, user.router)
 
     await bot.set_my_commands([
         BotCommand(command="start", description="Asosiy menyu"),
