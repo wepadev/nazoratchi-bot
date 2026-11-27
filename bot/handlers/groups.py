@@ -48,7 +48,12 @@ async def card_text(db: Database, g: Group) -> str:
              f"Ustozlar: {g.member_count} ta",
              "Nazoratchilar: " + (", ".join(escape(a.full_name) for a in admins) if admins else "— tayinlanmagan")]
     if active:
-        lines.append("Faol testlar: " + ", ".join(f"«{escape(t.title)}»" for t in active))
+        lines += ["", f"📝 <b>Faol testlar ({len(active)}):</b>"]
+        for t in active[:8]:
+            done = len(await db.list_submissions(t.id))
+            lines.append(f"• {escape(t.title)} — {done}/{g.member_count} topshirdi")
+        if len(active) > 8:
+            lines.append(f"… yana {len(active) - 8} ta")
     return "\n".join(lines)
 
 

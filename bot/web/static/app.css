@@ -214,3 +214,33 @@ textarea.input { height: auto; min-height: 76px; padding: 12px 14px; resize: ver
   font-variant-numeric: tabular-nums; padding-left: 12px; }
 .ai-play { width: 40px; height: 40px; border-radius: 12px; background: var(--danger-soft); color: var(--danger);
   display: grid; place-items: center; font-size: 15px; flex: none; }
+
+/* ---- ixcham sarlavha va guruh ro'yxati ---- */
+.topbar { display: flex; justify-content: space-between; align-items: flex-end; gap: 12px; flex-wrap: wrap; }
+.mini-stats { display: flex; gap: 6px; flex-wrap: wrap; }
+.mini-stats span { background: var(--surface); box-shadow: var(--shadow); border-radius: 9999px; padding: 6px 10px;
+  font-size: 13px; color: var(--muted); white-space: nowrap; }
+.mini-stats b { color: var(--ink); font-variant-numeric: tabular-nums; }
+.gicon { width: 42px; height: 42px; border-radius: var(--r-md); background: var(--tint); color: var(--brand);
+  display: grid; place-items: center; font-weight: 800; font-size: 18px; flex: none; }
+.tap { display: block; width: 100%; text-align: left; }
+.tap:active, .row:active, .abtn:active { opacity: .75; }
+button.warn { display: block; width: 100%; text-align: left; }
+.tcard .top .grow { flex: 1; min-width: 0; }
+.agrid.three { grid-template-columns: repeat(3, 1fr); gap: 8px; }
+.agrid.three .abtn { flex-direction: column; justify-content: center; text-align: center; gap: 6px; padding: 12px 6px;
+  font-size: 13px; min-height: 84px; }
+.abtn.primary { background: var(--brand); color: var(--on-fill); }
+.abtn.primary .ai { background: rgba(255,255,255,.18); }
+.section > .label > span { background: var(--raised); color: var(--ink); border-radius: 9999px; padding: 1px 8px;
+  font-size: 12px; letter-spacing: 0; }
+.prow { display: block; }
+.prow .top-line { display: flex; justify-content: space-between; gap: 10px; align-items: center; }
+.pline { display: flex; align-items: center; gap: 10px; margin-top: 10px; }
+.pline .progress { flex: 1; }
+.pline b { font-size: 14px; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.tdot { width: 36px; height: 36px; border-radius: 50%; display: grid; place-items: center; flex: none;
+  background: var(--accent-soft); color: var(--accent-strong); font-weight: 700; }
+.tdot.done { background: var(--success-soft); color: var(--success); }
+.row .chip { flex: none; }
+.section > .label > span { text-transform: none; font-weight: 600; }

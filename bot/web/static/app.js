@@ -140,7 +140,7 @@
     if (g) {
       hero += `<div class="hero-stats">
         <div class="hs"><div class="v"><span class="coin"></span>${g.coins}</div><div class="k">tanga</div></div>
-        <div class="hs"><div class="v">${g.place ?? "—"}<small style="font-size:14px;opacity:.7;font-weight:600">/${g.total}</small></div><div class="k">o'rin</div></div>
+        <button class="hs" data-go="/rating/${g.id}" style="text-align:left;color:#fff"><div class="v">${g.place ?? "—"}<small style="font-size:14px;opacity:.7;font-weight:600">/${g.total}</small></div><div class="k">o'rin ›</div></button>
         <div class="hs"><div class="v">${g.week_coins > 0 ? "+" : ""}${g.week_coins}</div><div class="k">shu hafta</div></div>
       </div>`;
       if (HOME.groups.length > 1) {
@@ -152,23 +152,27 @@
     }
     hero += `</div>`;
 
-    const active = HOME.active.length ? HOME.active.map((t) => `
-      <div class="card tcard">
-        <div class="top"><div><div class="title">${esc(t.title)}</div>
-          <div class="meta">${esc(t.group)} · ${t.n} ta savol${t.deadline_at ? ` · ${fmtDate(t.deadline_at)} gacha` : ""}</div></div>
-          ${t.correct === null ? deadlineChip(t.deadline_at) : `<span class="chip ok">✓ ${t.correct}/${t.n}</span>`}
-        </div>
-        <div class="actions">${t.correct === null
-          ? `<button class="btn block" data-go="/test/${t.id}">Javob belgilash</button>`
-          : `<button class="btn ghost block" data-go="/test/${t.id}">Javoblarimni ko'rish</button>`}</div>
-      </div>`).join("") : `<div class="card empty">Hozir faol test yo'q.<br>Yangi test chiqqanda bot xabar beradi 🔔</div>`;
+    const todo = HOME.active.filter((t) => t.correct === null);
+    const done = HOME.active.filter((t) => t.correct !== null);
+    const oneGroup = HOME.groups.length <= 1;
+    const active = HOME.active.length ? `<div class="list">${[...todo, ...done].map((t) => `
+      <button class="row" data-go="/test/${t.id}">
+        <div class="tdot ${t.correct === null ? "" : "done"}">${t.correct === null ? "✎" : "✓"}</div>
+        <div class="grow"><div class="t">${esc(t.title)}</div>
+          <div class="s">${t.n} ta savol${oneGroup ? "" : ` · ${esc(t.group)}`}</div>
+          ${t.correct === null ? `<div style="margin-top:6px">${deadlineChip(t.deadline_at)}</div>` : ""}</div>
+        ${t.correct === null ? "" : `<span class="chip ok">${t.correct}/${t.n}</span>`}
+        <span class="chev">›</span></button>`).join("")}</div>`
+      : `<div class="card empty">Hozir faol test yo'q.<br>Yangi test chiqqanda bot xabar beradi 🔔</div>`;
 
-    const recent = HOME.recent.length ? `<div class="list">${HOME.recent.map((t) => `
+    const recentAll = store.get("recentAll");
+    const recentShown = recentAll ? HOME.recent : HOME.recent.slice(0, 5);
+    const recent = HOME.recent.length ? `<div class="list">${recentShown.map((t) => `
       <button class="row" data-go="/test/${t.id}">
         <div class="grow"><div class="t">${esc(t.title)}</div><div class="s">${esc(t.group)} · ${fmtDate(t.closed_at)}</div></div>
         ${t.correct === null ? `<span class="chip bad">−${HOME.rules.penalty}</span>`
           : `<span class="chip ${t.correct === t.n ? "ok" : "muted"}">${t.correct}/${t.n}</span>`}
-        <span class="chev">›</span></button>`).join("")}</div>` : `<div class="card empty">Natijalar shu yerda chiqadi.</div>`;
+        <span class="chev">›</span></button>`).join("")}</div>${HOME.recent.length > 5 ? `<button class="btn ghost block" id="recentToggle" style="margin-top:10px">${recentAll ? "Qisqaroq" : `Hammasi (${HOME.recent.length})`}</button>` : ""}` : `<div class="card empty">Natijalar shu yerda chiqadi.</div>`;
 
     // kod maydoni faqat hozir ochiq va ustoz hali qatnashmagan dars bo'lsa ko'rinadi
     const pendingLessons = (HOME.lessons || []).filter((l) => !l.attended && new Date(l.closes_at) > Date.now());
@@ -177,8 +181,7 @@
         <div class="h-sub" style="margin:4px 0 12px">«${esc(pendingLessons[0].title)}» — dars oxirida aytilgan 4 xonali kodni kiriting · ${fmtDate(pendingLessons[0].closes_at).split(" ")[1]} gacha</div>
         <div class="stepper"><input class="input" id="acode" inputmode="numeric" maxlength="4" placeholder="• • • •" style="letter-spacing:6px;font-size:20px">
         <button class="btn" id="asend" style="width:auto;padding:0 18px;font-size:16px">Yuborish</button></div></div></div>` : ""}
-      <div class="section"><div class="label">Faol testlar</div>${active}</div>
-      ${g ? `<div class="section"><button class="btn ghost block" data-go="/rating/${g.id}">🏆 Reytingni ko'rish</button></div>` : ""}
+      <div class="section"><div class="label">Faol testlar${todo.length ? `<span>${todo.length} ta topshirilmagan</span>` : ""}</div>${active}</div>
       <div class="section"><div class="label">Natijalarim</div>${recent}</div>
       ${HOME.recordings && HOME.recordings.length ? `<div class="section"><div class="label">📺 Dars yozuvlari</div><div class="list">${HOME.recordings.map((v) => `
         <button class="row" data-video="${esc(v.url)}"><div class="ai-play">▶</div><div class="grow"><div class="t">${esc(v.title)}</div>
@@ -188,6 +191,8 @@
 
     $app.querySelectorAll("[data-g]").forEach((b) => b.onclick = () => { store.set("group", +b.dataset.g); haptic(); ustozHome(); });
     $app.querySelectorAll("[data-video]").forEach((b) => b.onclick = () => openUrl(b.dataset.video));
+    const rt = document.getElementById("recentToggle");
+    if (rt) rt.onclick = () => { store.set("recentAll", !recentAll); ustozHome().catch(showError); };
     if (pendingLessons.length) {  // muddat tugashi bilan maydon yo'qolsin
       const ms = Math.min(...pendingLessons.map((l) => new Date(l.closes_at) - Date.now())) + 1000;
       timers.push(setTimeout(() => { if (!location.hash.replace(/^#\/?/, "")) ustozHome().catch(showError); }, Math.min(ms, 2 ** 31 - 1)));
@@ -373,31 +378,31 @@
   async function adminHome() {
     const { groups, appeals_open } = await api("/api/admin/groups");
     const sup = ME.role === "super";
-    const list = groups.length ? groups.map((g) => {
+    const totalActive = groups.reduce((s, g) => s + (g.actives || []).length, 0);
+    // guruh kartasi ixcham: faol testlar tafsiloti guruh ichida ko'rsatiladi
+    const list = groups.length ? `<div class="list">${groups.map((g) => {
       const actives = g.actives || [];
-      const bars = actives.map((a) => {
-        const pct = g.members ? Math.round(100 * a.submitted / g.members) : 0;
-        return `<div style="margin-top:14px"><div style="display:flex;justify-content:space-between;gap:8px;font-size:14px;margin-bottom:6px">
-            <b>${esc(a.title)}</b><span class="h-sub" style="white-space:nowrap">${a.submitted}/${g.members} topshirdi</span></div>
-            <div class="progress"><i style="width:${pct}%"></i></div>
-            <div class="meta" style="margin-top:6px">${a.deadline_at ? `Muddat: ${fmtDate(a.deadline_at)} · ${left(a.deadline_at)} qoldi` : "♾ Muddatsiz"}</div></div>`;
-      }).join("");
-      return `<button class="card tcard" style="display:block;width:100%;text-align:left" data-go="/g/${g.id}">
-        <div class="top"><div><div class="title">${esc(g.name)}</div>
-          <div class="meta">${g.members} ta ustoz · kod <span class="code">${esc(g.code)}</span></div></div><span class="chev">›</span></div>
-        ${bars || `<div class="meta" style="margin-top:10px">Faol test yo'q</div>`}
-      </button>`;
-    }).join("") : `<div class="card empty">${sup ? "Hali guruh yo'q — «Yangi guruh» ni bosing." : "Sizga hali guruh tayinlanmagan."}</div>`;
-    render(`<div class="hero"><div class="hi">${sup ? "Bosh admin" : "Nazoratchi"}</div><div class="name">${esc(ME.name)}</div>
-        <div class="hero-stats"><div class="hs"><div class="v">${groups.length}</div><div class="k">guruh</div></div>
-        <div class="hs"><div class="v">${groups.reduce((s, g) => s + g.members, 0)}</div><div class="k">ustoz</div></div>
-        <div class="hs"><div class="v">${groups.reduce((s, g) => s + (g.actives || []).length, 0)}</div><div class="k">faol test</div></div></div></div>
-      <div class="section"><div class="agrid">
-        ${abtn("📨", "E'tirozlar" + (appeals_open ? `<span class="badge">${appeals_open}</span>` : ""), `data-go="/appeals"`)}
-        ${sup ? abtn("➕", "Yangi guruh", `data-go="/newgroup"`) : ""}
-        ${sup ? abtn("👮", "Nazoratchilar", `data-go="/staff"`) : ""}
-      </div></div>
-      <div class="section"><div class="label">Guruhlar</div>${list}</div>`);
+      const need = actives.reduce((s, a) => s + Math.max(0, g.members - a.submitted), 0);
+      const chip = actives.length
+        ? `<span class="chip ${need ? "accent" : "ok"}">${actives.length} faol${need ? ` · ${need} kutilmoqda` : " · ✓"}</span>`
+        : `<span class="chip muted">faol test yo'q</span>`;
+      const chipFinal = g.members ? chip : `<span class="chip muted">${actives.length ? actives.length + " faol · " : ""}ustoz yo'q</span>`;
+      return `<button class="row" data-go="/g/${g.id}"><div class="gicon">${esc((g.name.trim()[0] || "G").toUpperCase())}</div>
+        <div class="grow"><div class="t">${esc(g.name)}</div>
+          <div class="s">${g.members} ta ustoz · kod <span class="code">${esc(g.code)}</span></div>
+          <div style="margin-top:6px">${chipFinal}</div></div><span class="chev">›</span></button>`;
+    }).join("")}</div>` : `<div class="card empty">${sup ? "Hali guruh yo'q — «Yangi guruh» ni bosing." : "Sizga hali guruh tayinlanmagan."}</div>`;
+    const actions = [
+      appeals_open || !sup ? abtn("📨", "E'tirozlar" + (appeals_open ? `<span class="badge">${appeals_open}</span>` : ""), `data-go="/appeals"`) : "",
+      sup ? abtn("➕", "Yangi guruh", `data-go="/newgroup"`) : "",
+      sup ? abtn("👮", "Nazoratchilar", `data-go="/staff"`) : "",
+      sup && !appeals_open ? abtn("📨", "E'tirozlar", `data-go="/appeals"`) : "",
+    ].filter(Boolean).join("");
+    render(`<div class="topbar"><div><div class="h-sub">${sup ? "Bosh admin" : "Nazoratchi"}</div><div class="h-title">${esc(ME.name)}</div></div>
+        <div class="mini-stats"><span><b>${groups.length}</b> guruh</span><span><b>${groups.reduce((s, g) => s + g.members, 0)}</b> ustoz</span><span><b>${totalActive}</b> faol test</span></div></div>
+      ${appeals_open ? `<button class="warn tap" data-go="/appeals" style="margin-top:14px">📨 ${appeals_open} ta e'tiroz javob kutmoqda ›</button>` : ""}
+      <div class="section"><div class="label">Guruhlar</div>${list}</div>
+      <div class="section"><div class="agrid">${actions}</div></div>`);
   }
 
   async function newGroup() {
@@ -412,34 +417,50 @@
     };
   }
 
-  async function adminGroup(id) {
+  async function adminGroup(id, showAll = false) {
     const d = await api(`/api/admin/groups/${id}`);
     const g = d.group;
     const sup = ME.role === "super";
-    const tests = d.tests.length ? `<div class="list">${d.tests.map((t) => {
+    const live = d.tests.filter((t) => t.status === "published");
+    const others = d.tests.filter((t) => t.status !== "published");
+    // faol testlar — topshirish jarayoni bilan, sahifaning boshida
+    const progress = live.length ? live.map((t) => {
+      const pct = g.members ? Math.round(100 * t.submitted / g.members) : 0;
+      return `<button class="row prow" data-go="/t/${t.id}"><div class="grow">
+          <div class="top-line"><div class="t">${esc(t.title)}</div>${deadlineChip(t.deadline_at)}</div>
+          <div class="pline"><div class="progress"><i style="width:${pct}%"></i></div><b>${t.submitted}/${g.members}</b></div>
+          <div class="s">topshirdi${t.avg_pct !== null ? ` · o'rtacha ${t.avg_pct}%` : ""}</div></div></button>`;
+    }).join("") : "";
+    const LIMIT = 6;
+    const shown = showAll ? others : others.slice(0, LIMIT);
+    const tests = others.length ? `<div class="list">${shown.map((t) => {
       const [cls, label] = STATUS[t.status];
-      const live = t.status === "published" || t.status === "closed";
-      const meta = live ? `${t.submitted}/${g.members} topshirdi${t.avg_pct !== null ? ` · o'rtacha ${t.avg_pct}%` : ""}` : `${t.n} ta savol`;
+      const meta = t.status === "closed" ? `${t.submitted}/${g.members} topshirdi${t.avg_pct !== null ? ` · o'rtacha ${t.avg_pct}%` : ""}`
+        : t.status === "scheduled" && t.publish_at ? `${fmtDate(t.publish_at)} da chiqadi` : `${t.n} ta savol`;
       return `<button class="row" data-go="/t/${t.id}"><div class="grow"><div class="t">${esc(t.title)}</div><div class="s">${meta}</div></div>
         <span class="chip ${cls}">${label}</span><span class="chev">›</span></button>`;
-    }).join("")}</div>` : `<div class="card empty">Hali test yo'q. «Yangi test» ni bosing.</div>`;
+    }).join("")}</div>${others.length > shown.length ? `<button class="btn ghost block" id="more" style="margin-top:10px">Yana ${others.length - shown.length} ta test</button>` : ""}` : "";
     const risk = d.at_risk.length ? `<div class="section"><div class="warn">⚠️ Ketma-ket 2 ta testni topshirmaganlar: ${d.at_risk.map(esc).join(", ")}</div></div>` : "";
     render(`<div class="h-title" id="gtitle">${esc(g.name)}</div>
       <div class="h-sub">Kod: <span class="code" id="gcode">${esc(g.code)}</span> · ${g.members} ta ustoz</div>
       <div class="h-sub" style="margin-top:2px">Nazoratchilar: ${d.admins.length ? d.admins.map(esc).join(", ") : "tayinlanmagan"}</div>
-      ${risk}
-      <div class="section"><div class="agrid">
-        ${abtn("➕", "Yangi test", `data-go="/new/${g.id}"`)}
-        ${abtn("👥", "Ustozlar", `data-go="/m/${g.id}"`)}
+      <div class="section"><div class="agrid three">
+        ${abtn("➕", "Yangi test", `data-go="/new/${g.id}"`, "primary")}
+        ${abtn("🎥", "Jonli dars", `data-go="/lessons/${g.id}"`)}
         ${abtn("🏆", "Reyting", `data-go="/rating/${g.id}"`)}
+        ${abtn("👥", "Ustozlar", `data-go="/m/${g.id}"`)}
         ${abtn("📥", "Excel", `id="excel"`)}
-        ${abtn("🎥", "Jonli darslar", `data-go="/lessons/${g.id}"`)}
         ${abtn("🔄", "Yangi kod", `id="code"`)}
-        ${sup ? abtn("👮", "Nazoratchilar", `data-go="/ga/${g.id}"`) : ""}
-        ${sup ? abtn("✏️", "Nomini o'zgartirish", `id="rename"`) : ""}
+        ${sup ? abtn("👮", "Nazoratchi", `data-go="/ga/${g.id}"`) : ""}
+        ${sup ? abtn("✏️", "Nomi", `id="rename"`) : ""}
         ${sup ? abtn("🗑", "O'chirish", `id="gdel"`, "danger") : ""}
       </div><div id="renameBox"></div></div>
-      <div class="section"><div class="label">Testlar</div>${tests}</div>`);
+      ${risk}
+      <div class="section"><div class="label">Faol testlar${live.length ? `<span>${live.length}</span>` : ""}</div>${live.length
+        ? `<div class="list">${progress}</div>` : `<div class="card empty" style="padding:20px 16px">Faol test yo'q — «Yangi test» ni bosing.</div>`}</div>
+      ${others.length ? `<div class="section"><div class="label">Boshqa testlar</div>${tests}</div>` : ""}`);
+    const more = document.getElementById("more");
+    if (more) more.onclick = () => adminGroup(id, true).catch(showError);
 
     document.getElementById("excel").onclick = async () => {
       try { await post(`/api/admin/groups/${g.id}/excel`); haptic("ok"); toast("📥 Excel fayl botga yuborildi"); }
